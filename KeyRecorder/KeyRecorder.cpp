@@ -194,11 +194,9 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
             int x = pMouseStruct->pt.x;
             int y = pMouseStruct->pt.y;
             
-            bool isLocked = !g_cursorVisible || g_isClipped;
-            
             std::lock_guard<std::mutex> lock(g_mutex);
             if (g_logFile.is_open()) {
-                if (isLocked) {
+                if (g_isClipped) {
                     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
                     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
                     int centerX = screenWidth / 2;
