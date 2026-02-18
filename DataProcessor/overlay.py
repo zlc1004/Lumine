@@ -33,7 +33,8 @@ class Overlay:
         self.first_timestamp = self.events[0][0]
         self.program_start = time.time()
         self.offset = self.first_timestamp
-        self.rel_x, self.rel_y = 0, 0
+        w, h = self.screen.get_size()
+        self.rel_x, self.rel_y = w//2, h//2
         pygame.init()
         pygame.display.set_caption("Mouse Recorder Overlay")
 
@@ -92,7 +93,8 @@ class Overlay:
                 if len(data) > 0:
                     if data[0] == "LOCK":
                         self.cursor_locked = True
-                        self.rel_x, self.rel_y = 0, 0
+                        w, h = self.screen.get_size()
+                        self.rel_x, self.rel_y = w//2, h//2
                     elif data[0] == "UNLOCK":
                         self.cursor_locked = False
             elif event_type == "MOUSE_ABS" and len(data) >= 2:
