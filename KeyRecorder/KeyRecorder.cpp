@@ -321,7 +321,7 @@ int main(int argc, char* argv[]) {
         g_lastMouseY = cursorPos.y;
     }
 
-    std::cout << "Recording started... (Press ESC to stop)" << std::endl;
+    std::cout << "Recording started... (Press F5 to stop)" << std::endl;
 
     using namespace std::chrono;
     auto nextTickTime = steady_clock::now();
