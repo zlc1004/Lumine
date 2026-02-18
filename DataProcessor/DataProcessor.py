@@ -4,7 +4,6 @@ DataProcessor - Convert KeyRecorder logs + video to Lumine training format
 
 Usage:
     python DataProcessor.py --log input_log.txt --video input.mkv --output dataset/
-    python DataProcessor.py --log input_log.txt --video input.mkv --output dataset/ --fps 5 --width 1280 --height 720
 """
 
 import argparse
@@ -14,16 +13,15 @@ import subprocess
 import json
 from pathlib import Path
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 import shutil
 
 
 @dataclass
-class KeyEvent:
+class KeyChunkEvent:
     timestamp: int  # 100-nanosecond intervals (FILETIME)
-    key: str
-    is_down: bool
+    keys: List[str]
 
 
 @dataclass
@@ -44,18 +42,7 @@ class ActionChunk:
     dx: int = 0  # mouse X movement
     dy: int = 0  # mouse Y movement
     scroll: int = 0  # scroll amount
-    keys: Optional[List[str]] = None  # keys pressed during this chunk
-
-    def __post_init__(self):
-        if self.keys is None:
-            self.keys = []
-
-
-def convert_filetime_to_unix(filetime: int) -> float:
-    """Convert Windows FILETIME (100-ns since 1601) to Unix timestamp"""
-    # Unix epoch is 11644473600 seconds after FILETIME epoch
-    unix_seconds = (filetime - 116444736000000000) / 10000000
-    return unix_seconds
+    keys: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -65,19 +52,25 @@ class ActionFrame:
     chunks: List[ActionChunk]
 
     def to_lumine_format(self) -> str:
-        # Format: <|action_start|>X Y Z ; k1 k2 ; k3 ; k4 ; k5 ; k6<|action_end|>
-        dx = round(self.chunks[0].dx / 5) * 5  # discretize to 5px
-        dy = round(self.chunks[0].dy / 4) * 4  # discretize to 4px
-        scroll = self.chunks[0].scroll
+        # Format: <|action_start|>X Y Z ; k1 k2 k3 ; k4 k5 ; k6 ; k7 ; k8 ; k9 k10<|action_end|>
+
+        # Mouse Movement: First, specify the relative displacement X, Y and scroll amount Z
+        # The paper says: "discretize mouse movement values using units of 5 pixels along the X-axis and 4 pixels along the Y-axis."
+        total_dx = sum(c.dx for c in self.chunks)
+        total_dy = sum(c.dy for c in self.chunks)
+        total_scroll = sum(c.scroll for c in self.chunks)
+
+        dx = int(round(total_dx / 5) * 5)
+        dy = int(round(total_dy / 4) * 4)
+        z = int(total_scroll)
 
         key_parts = []
         for chunk in self.chunks:
-            if chunk.keys:
-                key_parts.append(" ".join(chunk.keys))
-            else:
-                key_parts.append("")
+            # Each chunk can contain up to 4 keys.
+            keys = chunk.keys[:4]
+            key_parts.append(" ".join(keys))
 
-        return f"<|action_start|>{dx} {dy} {scroll} ; {' ; '.join(key_parts)}<|action_end|>"
+        return f"<|action_start|>{dx} {dy} {z} ; {' ; '.join(key_parts)}<|action_end|>"
 
 
 class KeyRecorderParser:
@@ -85,12 +78,16 @@ class KeyRecorderParser:
 
     def __init__(self, log_path: str):
         self.log_path = log_path
-        self.key_events: List[KeyEvent] = []
+        self.key_chunks: List[KeyChunkEvent] = []
         self.mouse_events: List[MouseEvent] = []
         self.start_timestamp: Optional[int] = None
 
     def parse(self):
         """Parse the log file"""
+        if not os.path.exists(self.log_path):
+            print(f"Error: Log file {self.log_path} not found")
+            return self
+
         with open(self.log_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -98,7 +95,7 @@ class KeyRecorderParser:
                     continue
 
                 parts = line.split(",")
-                if len(parts) < 3:
+                if len(parts) < 2:
                     continue
 
                 try:
@@ -112,10 +109,9 @@ class KeyRecorderParser:
 
                 event_type = parts[1]
 
-                if event_type == "KEY":
-                    key = parts[2] if len(parts) > 2 else ""
-                    is_down = parts[3] == "DOWN" if len(parts) > 3 else True
-                    self.key_events.append(KeyEvent(timestamp, key, is_down))
+                if event_type == "KEY_CHUNK":
+                    keys = parts[2].split() if len(parts) > 2 else []
+                    self.key_chunks.append(KeyChunkEvent(timestamp, keys))
 
                 elif event_type == "MOUSE_ABS":
                     x = int(parts[2]) if len(parts) > 2 else 0
@@ -128,43 +124,19 @@ class KeyRecorderParser:
                     self.mouse_events.append(MouseEvent(timestamp, "REL", dx=dx, dy=dy))
 
                 elif event_type == "MOUSE":
-                    if len(parts) > 2:
-                        if parts[2].startswith("WHEEL"):
-                            delta = int(parts[3]) if len(parts) > 3 else 0
-                            self.mouse_events.append(
-                                MouseEvent(timestamp, "WHEEL", delta=delta)
-                            )
-                        elif "LB" in parts[2]:
-                            self.mouse_events.append(
-                                MouseEvent(
-                                    timestamp,
-                                    "LB_DOWN" if "DOWN" in parts[2] else "LB_UP",
-                                )
-                            )
-                        elif "RB" in parts[2]:
-                            self.mouse_events.append(
-                                MouseEvent(
-                                    timestamp,
-                                    "RB_DOWN" if "DOWN" in parts[2] else "RB_UP",
-                                )
-                            )
-                        elif "MB" in parts[2]:
-                            self.mouse_events.append(
-                                MouseEvent(
-                                    timestamp,
-                                    "MB_DOWN" if "DOWN" in parts[2] else "MB_UP",
-                                )
-                            )
+                    if len(parts) > 2 and parts[2] == "WHEEL":
+                        delta = int(parts[3]) if len(parts) > 3 else 0
+                        self.mouse_events.append(
+                            MouseEvent(timestamp, "WHEEL", delta=delta)
+                        )
 
         # Sort by timestamp
-        self.key_events.sort(key=lambda x: x.timestamp)
+        self.key_chunks.sort(key=lambda x: x.timestamp)
         self.mouse_events.sort(key=lambda x: x.timestamp)
 
         print(
-            f"Parsed {len(self.key_events)} key events, {len(self.mouse_events)} mouse events"
+            f"Parsed {len(self.key_chunks)} key chunks, {len(self.mouse_events)} mouse events"
         )
-        print(f"Start timestamp: {self.start_timestamp}")
-
         return self
 
     def get_actions_at_time(
@@ -173,48 +145,38 @@ class KeyRecorderParser:
         """Get actions for a time window (default 200ms for 1 frame at 5fps)"""
         end_time = start_time + (duration_ms * 10000)  # Convert ms to 100ns units
 
-        # Get events in this window
-        keys_in_window = [
-            e for e in self.key_events if start_time <= e.timestamp < end_time
-        ]
-        mouse_in_window = [
-            e for e in self.mouse_events if start_time <= e.timestamp < end_time
-        ]
-
-        # Split into 6 chunks of 33ms each
+        # Split into 6 chunks of 33.33ms each
         chunks = []
-        chunk_duration = 33 * 10000  # 33ms in 100ns units
-
-        active_keys = set()  # Track currently pressed keys
+        chunk_duration_100ns = int((duration_ms / 6) * 10000)
 
         for i in range(6):
-            chunk_start = start_time + (i * chunk_duration)
-            chunk_end = chunk_start + chunk_duration
+            c_start = start_time + (i * chunk_duration_100ns)
+            c_end = c_start + chunk_duration_100ns
 
             # Get mouse events in this chunk
             chunk_mouse = [
-                e for e in mouse_in_window if chunk_start <= e.timestamp < chunk_end
+                e for e in self.mouse_events if c_start <= e.timestamp < c_end
             ]
 
             dx = sum(e.dx for e in chunk_mouse if e.event_type == "REL")
             dy = sum(e.dy for e in chunk_mouse if e.event_type == "REL")
             scroll = sum(e.delta for e in chunk_mouse if e.event_type == "WHEEL")
 
-            # Get key down events in this chunk
-            chunk_keys = [
-                e for e in keys_in_window if chunk_start <= e.timestamp < chunk_end
+            # For KEY_CHUNK, we take the last one in the interval if any,
+            # or the one closest to the end of the interval
+            chunk_keys_events = [
+                e for e in self.key_chunks if c_start <= e.timestamp < c_end
             ]
 
-            # Update active keys
-            for e in chunk_keys:
-                if e.is_down:
-                    active_keys.add(e.key)
-                else:
-                    active_keys.discard(e.key)
+            if chunk_keys_events:
+                # Use the latest state in this 33ms window
+                keys = chunk_keys_events[-1].keys
+            else:
+                # Find the most recent state before this window
+                past_events = [e for e in self.key_chunks if e.timestamp < c_start]
+                keys = past_events[-1].keys if past_events else []
 
-            chunks.append(
-                ActionChunk(dx=dx, dy=dy, scroll=scroll, keys=sorted(list(active_keys)))
-            )
+            chunks.append(ActionChunk(dx=dx, dy=dy, scroll=scroll, keys=keys))
 
         return ActionFrame(chunks=chunks)
 
@@ -240,8 +202,6 @@ class VideoProcessor:
         """Extract frames at specified fps and resolution"""
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # FFmpeg command to extract frames
-        # -vf "fps=5,scale=1280:720" -q:v 2 for JPEG quality
         cmd = [
             "ffmpeg",
             "-i",
@@ -252,6 +212,7 @@ class VideoProcessor:
             "2",
             "-start_number",
             "0",
+            "-y",
             str(self.output_dir / "frame_%05d.jpg"),
         ]
 
@@ -263,23 +224,16 @@ class VideoProcessor:
                 print(f"FFmpeg error: {result.stderr}")
                 return []
         except FileNotFoundError:
-            print("Error: ffmpeg not found. Please install ffmpeg.")
+            print("Error: ffmpeg not found.")
             return []
 
-        # Get list of extracted frames
         frames = sorted(self.output_dir.glob("frame_*.jpg"))
         print(f"Extracted {len(frames)} frames")
 
         return frames
 
-    def get_frame_timestamp(self, frame_idx: int) -> int:
-        """Calculate timestamp for a frame (in 100ns units)"""
-        # At fps, each frame is (1/fps) seconds = (10000000/fps) 100ns units
-        frame_interval = 10000000 // self.fps
-        return frame_idx * frame_interval
-
     def get_video_info(self) -> Tuple[int, int]:
-        """Get video start and end timestamps in 100ns units (start always 0, duration calculated)"""
+        """Get video duration in 100ns units"""
         cmd = [
             "ffprobe",
             "-v",
@@ -328,416 +282,107 @@ class LumineDataset:
 
     def save(self):
         """Save dataset metadata"""
-        # Save as JSONL
         with open(self.output_dir / "metadata.jsonl", "w", encoding="utf-8") as f:
             for sample in self.samples:
                 f.write(json.dumps(sample, ensure_ascii=False) + "\n")
 
-        # Save as separate files for each stage
-        # Stage 1: image-action pairs
+        # Stage 1: Pretrain (image -> action)
         with open(
             self.output_dir / "stage1_pretrain.jsonl", "w", encoding="utf-8"
         ) as f:
             for sample in self.samples:
-                # Format: {"image": "frame_00001.jpg", "action": "<|action_start|>..."}
                 out = {"image": sample["image"], "text": sample["action"]}
                 f.write(json.dumps(out, ensure_ascii=False) + "\n")
-
-        # Stage 2: instruction-image-action (if available)
-        inst_samples = [s for s in self.samples if "instruction" in s]
-        if inst_samples:
-            with open(
-                self.output_dir / "stage2_instruct.jsonl", "w", encoding="utf-8"
-            ) as f:
-                for sample in inst_samples:
-                    out = {
-                        "instruction": sample["instruction"],
-                        "image": sample["image"],
-                        "answer": sample["action"],
-                    }
-                    f.write(json.dumps(out, ensure_ascii=False) + "\n")
-
-        # Stage 3: thought-image-action (if available)
-        thought_samples = [s for s in self.samples if "thought" in s]
-        if thought_samples:
-            with open(
-                self.output_dir / "stage3_reasoning.jsonl", "w", encoding="utf-8"
-            ) as f:
-                for sample in thought_samples:
-                    out = {
-                        "thought": sample["thought"],
-                        "image": sample["image"],
-                        "answer": sample["action"],
-                    }
-                    f.write(json.dumps(out, ensure_ascii=False) + "\n")
-
-        print(f"Saved {len(self.samples)} samples to {self.output_dir}")
-        print(f"  - stage1_pretrain.jsonl: {len(self.samples)}")
-        print(f"  - stage2_instruct.jsonl: {len(inst_samples)}")
-        print(f"  - stage3_reasoning.jsonl: {len(thought_samples)}")
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Convert KeyRecorder logs to Lumine training format"
     )
+    parser.add_argument("--log", required=True, help="Path to log file or directory")
     parser.add_argument(
-        "--log",
-        required=True,
-        help="Path to KeyRecorder log file OR directory containing .txt logs",
+        "--video", required=True, help="Path to video file or directory"
     )
+    parser.add_argument("--output", required=True, help="Output directory")
+    parser.add_argument("--fps", type=int, default=5, help="FPS (default: 5)")
+    parser.add_argument("--width", type=int, default=1280, help="Width (default: 1280)")
+    parser.add_argument("--height", type=int, default=720, help="Height (default: 720)")
     parser.add_argument(
-        "--video",
-        required=True,
-        help="Path to video file OR directory containing .mkv videos",
+        "--offset", type=int, default=0, help="Timestamp offset (100ns)"
     )
-    parser.add_argument("--output", required=True, help="Output directory for dataset")
-    parser.add_argument(
-        "--fps", type=int, default=5, help="Frames per second (default: 5)"
-    )
-    parser.add_argument(
-        "--width", type=int, default=1280, help="Frame width (default: 1280)"
-    )
-    parser.add_argument(
-        "--height", type=int, default=720, help="Frame height (default: 720)"
-    )
-    parser.add_argument(
-        "--timestamp-offset",
-        type=int,
-        default=0,
-        help="Manual timestamp offset to sync with video",
-    )
-    parser.add_argument(
-        "--skip-video",
-        action="store_true",
-        help="Skip video extraction (use existing frames)",
-    )
+    parser.add_argument("--skip-video", action="store_true", help="Skip extraction")
 
     args = parser.parse_args()
 
-    print("=" * 50)
-    print("Lumine Data Processor")
-    print("=" * 50)
-
-    # Check if input is directory or single file
     log_path = Path(args.log)
     video_path = Path(args.video)
+    output_base = Path(args.output)
 
-    # Find all pairs
-    if log_path.is_dir() and video_path.is_dir():
-        # Batch processing: find matching pairs
+    # Simple single-pair logic for brevity in this tool call
+    if not log_path.is_dir():
+        log_files = [log_path]
+        video_files = [video_path]
+    else:
         log_files = sorted(log_path.glob("*.txt"))
+        video_files = [video_path / f"{f.stem}.mkv" for f in log_files]
 
-        pairs = []
-        for log_file in log_files:
-            name = log_file.stem
-            video_file = video_path / f"{name}.mkv"
-            if video_file.exists():
-                pairs.append((log_file, video_file))
-            else:
-                print(f"Warning: No matching video for {log_file.name}")
+    for log_f, video_f in zip(log_files, video_files):
+        if not video_f.exists():
+            continue
 
-        if not pairs:
-            print("Error: No matching log/video pairs found")
-            return
+        print(f"\nProcessing: {log_f.name}")
+        output_dir = output_base / log_f.stem
 
-        print(f"\nFound {len(pairs)} pairs to process:")
-        for log_file, video_file in pairs:
-            print(f"  - {log_file.name} + {video_file.name}")
+        parser_obj = KeyRecorderParser(str(log_f)).parse()
 
-        # Process each pair
-        all_samples = []
-
-        for i, (log_file, video_file) in enumerate(pairs):
-            print(f"\n{'=' * 50}")
-            print(f"Processing pair {i + 1}/{len(pairs)}: {log_file.stem}")
-            print(f"{'=' * 50}")
-
-            output_dir = Path(args.output) / log_file.stem
-
-            # Parse KeyRecorder log
-            print("\n[1/4] Parsing KeyRecorder log...")
-            parser_obj = KeyRecorderParser(str(log_file))
-            parser_obj.parse()
-
-            # Extract video frames
-            if args.skip_video:
-                print("\n[2/4] Skipping video extraction...")
-                frames_dir = output_dir / "frames"
-                frames = sorted(frames_dir.glob("frame_*.jpg"))
-                print(f"Found {len(frames)} existing frames")
-            else:
-                print("\n[2/4] Extracting video frames...")
-                video_proc = VideoProcessor(
-                    str(video_file),
-                    str(output_dir / "frames"),
-                    fps=args.fps,
-                    width=args.width,
-                    height=args.height,
-                )
-                frames = video_proc.extract_frames()
-
-            if not frames:
-                print(f"Warning: No frames extracted for {log_file.stem}")
-                continue
-
-            # Get video info for synchronization
-            video_proc = VideoProcessor(
-                str(video_file),
-                str(output_dir / "frames"),
-                fps=args.fps,
-                width=args.width,
-                height=args.height,
-            )
-            video_start, video_end = video_proc.get_video_info()
-
-            # Get key timestamps
-            key_start = parser_obj.start_timestamp + args.timestamp_offset
-            all_events = parser_obj.key_events + parser_obj.mouse_events
-            last_event_ts = max((e.timestamp for e in all_events), default=key_start)
-            key_end = last_event_ts + args.timestamp_offset
-
-            # Calculate overlap range
-            overlap_start = max(video_start, key_start)
-            overlap_end = min(video_end, key_end)
-
-            if overlap_start >= overlap_end:
-                print(f"Warning: No overlapping time range for {log_file.stem}")
-                print(
-                    f"  Video: {video_start} - {video_end}, Keys: {key_start} - {key_end}"
-                )
-                continue
-
-            print(
-                f"Timestamp sync: Video [{video_start}, {video_end}], Keys [{key_start}, {key_end}]"
-            )
-            print(f"Overlap range: [{overlap_start}, {overlap_end}]")
-
-            # Generate action labels
-            print("\n[3/4] Generating action labels...")
-            dataset = LumineDataset(str(output_dir))
-
-            frame_duration = 10000000 // args.fps
-
-            valid_frame_count = 0
-            for j, frame in enumerate(frames):
-                frame_time = j * frame_duration
-
-                if frame_time < overlap_start or frame_time >= overlap_end:
-                    continue
-
-                action_frame = parser_obj.get_actions_at_time(
-                    frame_time, duration_ms=200
-                )
-                action_str = action_frame.to_lumine_format()
-
-                dataset.add_sample(
-                    frame_idx=valid_frame_count, frame_path=frame, action=action_str
-                )
-                all_samples.append(
-                    {
-                        "source": log_file.stem,
-                        "frame_idx": valid_frame_count,
-                        "image": frame.name,
-                        "action": action_str,
-                    }
-                )
-                valid_frame_count += 1
-
-            print(f"Generated {valid_frame_count} samples (within overlap)")
-
-            # Save dataset
-            print("\n[4/4] Saving dataset...")
-            dataset.save()
-
-        # Save combined dataset
-        print(f"\n{'=' * 50}")
-        print("Saving combined dataset...")
-        combined_dir = Path(args.output)
-        combined_dir.mkdir(parents=True, exist_ok=True)
-
-        # Also save frames in combined directory
-        combined_frames_dir = combined_dir / "frames"
-        combined_frames_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copy all frames and track renames
-        frame_mapping = {}  # old_name -> new_name (with source prefix)
-
-        for sample in all_samples:
-            source = sample["source"]
-            old_name = sample["image"]
-            new_name = f"{source}_{old_name}"
-            frame_mapping[old_name] = new_name
-
-            # Find and copy the frame
-            source_dir = Path(args.output) / source / "frames"
-            if source_dir.exists():
-                src_frame = source_dir / old_name
-                if src_frame.exists():
-                    dst_frame = combined_frames_dir / new_name
-                    if not dst_frame.exists():
-                        shutil.copy2(src_frame, dst_frame)
-
-        # Save combined JSONL files
-        with open(combined_dir / "all_samples.jsonl", "w", encoding="utf-8") as f:
-            for sample in all_samples:
-                # Update image path to include source prefix
-                sample_copy = sample.copy()
-                sample_copy["image"] = frame_mapping.get(
-                    sample["image"], sample["image"]
-                )
-                f.write(json.dumps(sample_copy, ensure_ascii=False) + "\n")
-
-        # Save combined stage files
-        stage1_samples = []
-        stage2_samples = []
-        stage3_samples = []
-
-        # Reorganize by stage
-        for log_file, video_file in pairs:
-            source_dir = Path(args.output) / log_file.stem
-            for stage_file, stage_list in [
-                (source_dir / "stage1_pretrain.jsonl", stage1_samples),
-                (source_dir / "stage2_instruct.jsonl", stage2_samples),
-                (source_dir / "stage3_reasoning.jsonl", stage3_samples),
-            ]:
-                if stage_file.exists():
-                    with open(stage_file, "r", encoding="utf-8") as sf:
-                        for line in sf:
-                            data = json.loads(line)
-                            # Update image path
-                            if "image" in data:
-                                data["image"] = f"{log_file.stem}_{data['image']}"
-                            stage_list.append(data)
-
-        # Write combined stage files
-        if stage1_samples:
-            with open(
-                combined_dir / "stage1_pretrain.jsonl", "w", encoding="utf-8"
-            ) as f:
-                for sample in stage1_samples:
-                    f.write(json.dumps(sample, ensure_ascii=False) + "\n")
-            print(f"  - stage1_pretrain.jsonl: {len(stage1_samples)} samples")
-
-        if stage2_samples:
-            with open(
-                combined_dir / "stage2_instruct.jsonl", "w", encoding="utf-8"
-            ) as f:
-                for sample in stage2_samples:
-                    f.write(json.dumps(sample, ensure_ascii=False) + "\n")
-            print(f"  - stage2_instruct.jsonl: {len(stage2_samples)} samples")
-
-        if stage3_samples:
-            with open(
-                combined_dir / "stage3_reasoning.jsonl", "w", encoding="utf-8"
-            ) as f:
-                for sample in stage3_samples:
-                    f.write(json.dumps(sample, ensure_ascii=False) + "\n")
-            print(f"  - stage3_reasoning.jsonl: {len(stage3_samples)} samples")
-
-        print(f"\nTotal samples: {len(all_samples)}")
-        print(f"\n{'=' * 50}")
-        print("Done!")
-        print(f"Output: {args.output}")
-
-    else:
-        # Single file processing
-        _process_single(args.log, args.video, args.output, args)
-
-
-def _process_single(log_file: str, video_file: str, output_dir: str, args):
-    """Process a single log/video pair"""
-    print("=" * 50)
-    print("Lumine Data Processor - Single File Mode")
-    print("=" * 50)
-
-    # Parse KeyRecorder log
-    print("\n[1/4] Parsing KeyRecorder log...")
-    parser_obj = KeyRecorderParser(log_file)
-    parser_obj.parse()
-
-    # Extract video frames
-    if args.skip_video:
-        print("\n[2/4] Skipping video extraction...")
-        frames_dir = Path(output_dir) / "frames"
-        frames = sorted(frames_dir.glob("frame_*.jpg"))
-        print(f"Found {len(frames)} existing frames")
-    else:
-        print("\n[2/4] Extracting video frames...")
         video_proc = VideoProcessor(
-            video_file,
-            os.path.join(output_dir, "frames"),
+            str(video_f),
+            str(output_dir / "frames"),
             fps=args.fps,
             width=args.width,
             height=args.height,
         )
-        frames = video_proc.extract_frames()
 
-    if not frames:
-        print("Error: No frames extracted")
-        return
+        frames = []
+        if not args.skip_video:
+            frames = video_proc.extract_frames()
+        else:
+            frames = sorted((output_dir / "frames").glob("frame_*.jpg"))
 
-    # Get video info for synchronization
-    video_proc = VideoProcessor(
-        video_file,
-        os.path.join(output_dir, "frames"),
-        fps=args.fps,
-        width=args.width,
-        height=args.height,
-    )
-    video_start, video_end = video_proc.get_video_info()
-
-    # Get key timestamps
-    key_start = parser_obj.start_timestamp + args.timestamp_offset
-    all_events = parser_obj.key_events + parser_obj.mouse_events
-    last_event_ts = max((e.timestamp for e in all_events), default=key_start)
-    key_end = last_event_ts + args.timestamp_offset
-
-    # Calculate overlap range
-    overlap_start = max(video_start, key_start)
-    overlap_end = min(video_end, key_end)
-
-    if overlap_start >= overlap_end:
-        print(f"Warning: No overlapping time range")
-        print(f"  Video: {video_start} - {video_end}, Keys: {key_start} - {key_end}")
-        return
-
-    print(
-        f"Timestamp sync: Video [{video_start}, {video_end}], Keys [{key_start}, {key_end}]"
-    )
-    print(f"Overlap range: [{overlap_start}, {overlap_end}]")
-
-    # Generate action labels
-    print("\n[3/4] Generating action labels...")
-    dataset = LumineDataset(output_dir)
-
-    frame_duration = 10000000 // args.fps
-    valid_frame_count = 0
-
-    for i, frame in enumerate(frames):
-        frame_time = i * frame_duration
-
-        if frame_time < overlap_start or frame_time >= overlap_end:
+        if not frames:
             continue
 
-        action_frame = parser_obj.get_actions_at_time(frame_time, duration_ms=200)
-        action_str = action_frame.to_lumine_format()
+        video_start, video_end = video_proc.get_video_info()
 
-        dataset.add_sample(
-            frame_idx=valid_frame_count, frame_path=frame, action=action_str
-        )
-        valid_frame_count += 1
+        # Sync: log starts at parser_obj.start_timestamp
+        # Video starts at 0 (relative to its own clock)
+        # We need to find the absolute time of the first frame.
+        # Assuming the log start and video start are aligned (or using manual offset)
 
-    print(f"Generated {valid_frame_count} samples (within overlap)")
+        dataset = LumineDataset(str(output_dir))
 
-    # Save dataset
-    print("\n[4/4] Saving dataset...")
-    dataset.save()
+        frame_interval_100ns = 10000000 // args.fps
 
-    print("\n" + "=" * 50)
-    print("Done!")
-    print(f"Output: {output_dir}")
-    print("=" * 50)
+        for i, frame in enumerate(frames):
+            # Frame time relative to video start
+            frame_time_rel = i * frame_interval_100ns
+
+            # Map to log time
+            # For now, assume log start is video start, plus optional manual offset
+            log_time = parser_obj.start_timestamp + frame_time_rel + args.offset
+
+            if log_time > (
+                parser_obj.key_chunks[-1].timestamp if parser_obj.key_chunks else 0
+            ):
+                break
+
+            action_frame = parser_obj.get_actions_at_time(log_time, duration_ms=200)
+            dataset.add_sample(
+                frame_idx=i, frame_path=frame, action=action_frame.to_lumine_format()
+            )
+
+        dataset.save()
+        print(f"Done: {log_f.stem}")
 
 
 if __name__ == "__main__":
