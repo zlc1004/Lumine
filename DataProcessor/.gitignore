@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Data
+input_logs/
+recordings/
+*.mkv
+*.mp4
+*.txt
+!requirements.txt
+
+# Output
+output/
+dataset/
+*.jsonl
+frames/
