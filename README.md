@@ -1,5 +1,6 @@
 # Lumine
 
+```
 @misc{tan2025lumineopenrecipebuilding,
       title={Lumine: An Open Recipe for Building Generalist Agents in 3D Open Worlds}, 
       author={Weihao Tan and Xiangyang Li and Yunhao Fang and Heyuan Yao and Shi Yan and Hao Luo and Tenglong Ao and Huihui Li and Hongbin Ren and Bairen Yi and Yujia Qin and Bo An and Libin Liu and Guang Shi},
@@ -9,3 +10,4 @@
       primaryClass={cs.AI},
       url={https://arxiv.org/abs/2511.08892}, 
 }
+```
