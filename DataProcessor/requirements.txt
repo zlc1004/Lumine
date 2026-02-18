@@ -1,0 +1,5 @@
+# Requirements for DataProcessor
+# Run: pip install -r requirements.txt
+
+# No external dependencies needed - uses only stdlib
+# Optional: ffmpeg for video extraction (must be installed separately)
