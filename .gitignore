@@ -7,3 +7,4 @@ package.json
 .vscode
 .conda
 .ruff_cache
+papers
