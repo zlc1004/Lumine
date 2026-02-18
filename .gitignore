@@ -1,0 +1,9 @@
+node_modules
+package-lock.json
+package.json
+*__pycache__
+.env
+.DS_Store
+.vscode
+.conda
+.ruff_cache
