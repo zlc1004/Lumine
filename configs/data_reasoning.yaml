@@ -1,0 +1,7 @@
+# Lumine Reasoning Data Config
+
+sources:
+  - lumine_reasoning
+names:
+  - lumine_reasoning
+preprocessor: lumine_reasoning

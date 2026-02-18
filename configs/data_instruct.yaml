@@ -1,0 +1,7 @@
+# Lumine Instruction-Following Data Config
+
+sources:
+  - lumine_instruct
+names:
+  - lumine_instruct
+preprocessor: lumine_instruct

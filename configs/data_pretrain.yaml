@@ -1,0 +1,7 @@
+# Lumine Pre-training Data Config
+
+sources:
+  - lumine_pretrain
+names:
+  - lumine_pretrain
+preprocessor: lumine_pretrain

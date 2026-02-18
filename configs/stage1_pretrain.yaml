@@ -1,0 +1,38 @@
+# Lumine Stage 1: Pre-training Config
+# Train on image-action pairs to learn action primitives
+
+model:
+  model_path: models/Qwen2-VL-7B-Base
+  attn_implementation: flash_attn
+
+data:
+  train_path: configs/data_pretrain.yaml
+  chat_template: qwen2vl
+  max_seq_len: 8192
+  train_size: 10000000
+  datasets_type: mapping
+  mm_configs:
+    image_max_pixels: 262144
+    video_max_pixels: 262144
+    max_frames: 8
+    fps: 2.0
+
+train:
+  output_dir: output/lumine_stage1_pretrain
+  data_parallel_mode: fsdp2
+  wandb_project: lumine
+  wandb_name: lumine_stage1_pretrain
+  rmpad: false
+  rmpad_with_pos_ids: true
+  ulysses_parallel_size: 1
+  freeze_vit: false
+  lr: 1.0e-5
+  init_device: meta
+  lr_decay_style: cosine
+  num_train_epochs: 3
+  micro_batch_size: 1
+  global_batch_size: 8
+  max_steps: 10000
+  save_steps: 1000
+  save_epochs: 1
+  save_hf_weights: true
