@@ -28,19 +28,18 @@ int g_lastMouseY = 0;
 std::vector<RAWINPUT> g_pendingRawInput;
 std::mutex g_rawInputMutex;
 
+// Key state tracking
+bool g_keysHeld[256] = { false };
+bool g_mouseHeld[5] = { false }; // LB, RB, MB, XB1, XB2
+
 inline int64_t GetHighResTimestamp() {
     FILETIME ft;
     GetSystemTimePreciseAsFileTime(&ft);
     return (static_cast<int64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
 }
 
-std::string KeyCodeToToken(DWORD vkCode, bool isExtended) {
+std::string KeyCodeToToken(DWORD vkCode) {
     switch (vkCode) {
-    case VK_LBUTTON: return "LB";
-    case VK_RBUTTON: return "RB";
-    case VK_MBUTTON: return "MB";
-    case VK_XBUTTON1: return "XB1";
-    case VK_XBUTTON2: return "XB2";
     case '0': return "zero";
     case '1': return "one";
     case '2': return "two";
@@ -92,94 +91,31 @@ std::string KeyCodeToToken(DWORD vkCode, bool isExtended) {
     case VK_ESCAPE: return "Esc";
     case VK_TAB: return "Tab";
     case VK_CAPITAL: return "Caps";
+    case VK_LSHIFT:
+    case VK_RSHIFT:
     case VK_SHIFT: return "Shift";
+    case VK_LCONTROL:
+    case VK_RCONTROL:
     case VK_CONTROL: return "Ctrl";
+    case VK_LMENU:
+    case VK_RMENU:
     case VK_MENU: return "Alt";
     case VK_SPACE: return "Space";
-    case VK_BACK: return "Back";
-    case VK_RETURN: return "Enter";
-    case VK_LEFT: return "Left";
-    case VK_UP: return "Up";
-    case VK_RIGHT: return "Right";
-    case VK_DOWN: return "Down";
-    case VK_HOME: return "Home";
-    case VK_END: return "End";
-    case VK_PRIOR: return "PgUp";
-    case VK_NEXT: return "PgDn";
-    case VK_INSERT: return "Ins";
-    case VK_DELETE: return "Del";
-    case VK_NUMPAD0: return "Num0";
-    case VK_NUMPAD1: return "Num1";
-    case VK_NUMPAD2: return "Num2";
-    case VK_NUMPAD3: return "Num3";
-    case VK_NUMPAD4: return "Num4";
-    case VK_NUMPAD5: return "Num5";
-    case VK_NUMPAD6: return "Num6";
-    case VK_NUMPAD7: return "Num7";
-    case VK_NUMPAD8: return "Num8";
-    case VK_NUMPAD9: return "Num9";
-    case VK_MULTIPLY: return "Num*";
-    case VK_ADD: return "Num+";
-    case VK_SUBTRACT: return "Num-";
-    case VK_DECIMAL: return "Num.";
-    case VK_DIVIDE: return "Num/";
     default: return "";
-    }
-}
-
-void LogMouseButton(int64_t timestamp, const char* event) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_logFile.is_open()) {
-        g_logFile << timestamp << ",MOUSE," << event << "\n";
-    }
-}
-
-void LogMouseWheel(int64_t timestamp, int delta) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_logFile.is_open()) {
-        g_logFile << timestamp << ",MOUSE,WHEEL," << delta << "\n";
-    }
-}
-
-void LogMouseAbs(int64_t timestamp, int x, int y) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_logFile.is_open()) {
-        g_logFile << timestamp << ",MOUSE_ABS," << x << "," << y << "\n";
-    }
-}
-
-void LogMouseRel(int64_t timestamp, int dx, int dy) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_logFile.is_open()) {
-        g_logFile << timestamp << ",MOUSE_REL," << dx << "," << dy << "\n";
     }
 }
 
 LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0) {
-        if (wParam == VK_ESCAPE) {
-            g_running = false;
-            return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
-        }
-        
+        KBDLLHOOKSTRUCT* kbStruct = (KBDLLHOOKSTRUCT*)lParam;
         bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
         bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
-        
-        if (isDown || isUp) {
-            KBDLLHOOKSTRUCT* kbStruct = (KBDLLHOOKSTRUCT*)lParam;
-            DWORD vkCode = kbStruct->vkCode;
-            bool isExtended = (kbStruct->flags & LLKHF_EXTENDED) != 0;
 
-            std::string token = KeyCodeToToken(vkCode, isExtended);
-            if (!token.empty()) {
-                int64_t timestamp = GetHighResTimestamp();
-                
-                std::lock_guard<std::mutex> lock(g_mutex);
-                if (g_logFile.is_open()) {
-                    g_logFile << timestamp << ",KEY," << (isDown ? "DOWN" : "UP") << "," << token << "\n";
-                    g_logFile.flush();
-                }
-            }
+        if (isDown) g_keysHeld[kbStruct->vkCode] = true;
+        if (isUp) g_keysHeld[kbStruct->vkCode] = false;
+
+        if (kbStruct->vkCode == VK_ESCAPE && isDown) {
+            g_running = false;
         }
     }
     return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
@@ -188,65 +124,72 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_INPUT) {
         UINT cbSize;
-        GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &cbSize, sizeof(RAWINPUTHEADER));
-        
-        std::vector<BYTE> buffer(cbSize);
-        if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, buffer.data(), &cbSize, sizeof(RAWINPUTHEADER)) == cbSize) {
-            RAWINPUT* pRawInput = reinterpret_cast<RAWINPUT*>(buffer.data());
-            
-            if (pRawInput->header.dwType == RIM_TYPEMOUSE) {
-                std::lock_guard<std::mutex> lock(g_rawInputMutex);
-                g_pendingRawInput.push_back(*pRawInput);
+        if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &cbSize, sizeof(RAWINPUTHEADER)) == 0) {
+            std::vector<BYTE> buffer(cbSize);
+            if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, buffer.data(), &cbSize, sizeof(RAWINPUTHEADER)) == cbSize) {
+                RAWINPUT* pRawInput = reinterpret_cast<RAWINPUT*>(buffer.data());
+                if (pRawInput->header.dwType == RIM_TYPEMOUSE) {
+                    std::lock_guard<std::mutex> lock(g_rawInputMutex);
+                    g_pendingRawInput.push_back(*pRawInput);
+                }
             }
         }
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-void ProcessRawInput() {
+void ProcessRawInput(int64_t timestamp) {
     std::vector<RAWINPUT> rawCopy;
     {
         std::lock_guard<std::mutex> lock(g_rawInputMutex);
+        if (g_pendingRawInput.empty()) return;
         rawCopy = std::move(g_pendingRawInput);
         g_pendingRawInput.clear();
     }
-    
+
+    long totalDx = 0;
+    long totalDy = 0;
+    bool moved = false;
+
     for (const RAWINPUT& raw : rawCopy) {
         if (raw.header.dwType != RIM_TYPEMOUSE) continue;
-        
-        int64_t timestamp = GetHighResTimestamp();
-        USHORT flags = raw.data.mouse.usFlags;
-        
-        if (!(flags & MOUSE_MOVE_ABSOLUTE)) {
-            long dx = raw.data.mouse.lLastX;
-            long dy = raw.data.mouse.lLastY;
-            if (dx != 0 || dy != 0) {
-                if (g_isClipped) {
-                    LogMouseRel(timestamp, dx, dy);
-                } else {
-                    g_lastMouseX += dx;
-                    g_lastMouseY += dy;
-                    LogMouseAbs(timestamp, g_lastMouseX, g_lastMouseY);
-                }
-            }
+
+        if (!(raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+            totalDx += raw.data.mouse.lLastX;
+            totalDy += raw.data.mouse.lLastY;
+            if (raw.data.mouse.lLastX != 0 || raw.data.mouse.lLastY != 0) moved = true;
         }
-        
+
         USHORT btnFlags = raw.data.mouse.usButtonFlags;
-        
-        if (btnFlags & RI_MOUSE_LEFT_BUTTON_DOWN) LogMouseButton(timestamp, "LB_DOWN");
-        if (btnFlags & RI_MOUSE_LEFT_BUTTON_UP) LogMouseButton(timestamp, "LB_UP");
-        if (btnFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) LogMouseButton(timestamp, "RB_DOWN");
-        if (btnFlags & RI_MOUSE_RIGHT_BUTTON_UP) LogMouseButton(timestamp, "RB_UP");
-        if (btnFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) LogMouseButton(timestamp, "MB_DOWN");
-        if (btnFlags & RI_MOUSE_MIDDLE_BUTTON_UP) LogMouseButton(timestamp, "MB_UP");
-        if (btnFlags & RI_MOUSE_BUTTON_4_DOWN) LogMouseButton(timestamp, "XB1_DOWN");
-        if (btnFlags & RI_MOUSE_BUTTON_4_UP) LogMouseButton(timestamp, "XB1_UP");
-        if (btnFlags & RI_MOUSE_BUTTON_5_DOWN) LogMouseButton(timestamp, "XB2_DOWN");
-        if (btnFlags & RI_MOUSE_BUTTON_5_UP) LogMouseButton(timestamp, "XB2_UP");
-        
+        if (btnFlags & RI_MOUSE_LEFT_BUTTON_DOWN)   g_mouseHeld[0] = true;
+        if (btnFlags & RI_MOUSE_LEFT_BUTTON_UP)     g_mouseHeld[0] = false;
+        if (btnFlags & RI_MOUSE_RIGHT_BUTTON_DOWN)  g_mouseHeld[1] = true;
+        if (btnFlags & RI_MOUSE_RIGHT_BUTTON_UP)    g_mouseHeld[1] = false;
+        if (btnFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) g_mouseHeld[2] = true;
+        if (btnFlags & RI_MOUSE_MIDDLE_BUTTON_UP)   g_mouseHeld[2] = false;
+        if (btnFlags & RI_MOUSE_BUTTON_4_DOWN)      g_mouseHeld[3] = true;
+        if (btnFlags & RI_MOUSE_BUTTON_4_UP)        g_mouseHeld[3] = false;
+        if (btnFlags & RI_MOUSE_BUTTON_5_DOWN)      g_mouseHeld[4] = true;
+        if (btnFlags & RI_MOUSE_BUTTON_5_UP)        g_mouseHeld[4] = false;
+
         short wheelDelta = (short)HIWORD(raw.data.mouse.usButtonData);
         if (wheelDelta != 0) {
-            LogMouseWheel(timestamp, wheelDelta);
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_logFile << timestamp << ",MOUSE,WHEEL," << wheelDelta << "\n";
+        }
+    }
+
+    if (moved) {
+        if (g_isClipped) {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_logFile << timestamp << ",MOUSE_REL," << totalDx << "," << totalDy << "\n";
+        } else {
+            POINT p;
+            GetCursorPos(&p);
+            g_lastMouseX = p.x;
+            g_lastMouseY = p.y;
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_logFile << timestamp << ",MOUSE_ABS," << g_lastMouseX << "," << g_lastMouseY << "\n";
         }
     }
 }
@@ -334,7 +277,7 @@ int main(int argc, char* argv[]) {
     g_logFile << "# timestamp: Windows FILETIME (100-nanosecond intervals since 1601-01-01)" << std::endl;
     g_logFile << "#" << std::endl;
     g_logFile << "# Events:" << std::endl;
-    g_logFile << "#   KEY,DOWN|UP,token" << std::endl;
+    g_logFile << "#   KEY_CHUNK,token1 token2 ..." << std::endl;
     g_logFile << "#   MOUSE_ABS,x,y" << std::endl;
     g_logFile << "#   MOUSE_REL,dx,dy" << std::endl;
     g_logFile << "#   MOUSE,WHEEL,delta" << std::endl;
@@ -343,11 +286,11 @@ int main(int argc, char* argv[]) {
     g_logFile << "#" << std::endl;
     g_logFile.flush();
 
-    WNDCLASS wc = {};
+    WNDCLASSW wc = {};
     wc.lpfnWndProc = WndProc;
     wc.hInstance = GetModuleHandle(NULL);
     wc.lpszClassName = L"KeyRecorderWindow";
-    RegisterClass(&wc);
+    RegisterClassW(&wc);
 
     HWND hwnd = CreateWindowExW(0, L"KeyRecorderWindow", L"KeyRecorder", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
 
@@ -380,23 +323,64 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Recording started... (Press ESC to stop)" << std::endl;
 
+    using namespace std::chrono;
+    auto nextTickTime = steady_clock::now();
+    const nanoseconds tickDuration(1000000000LL / 30); // Exactly 1/30th of a second
     MSG msg;
-    DWORD lastCursorCheck = GetTickCount();
 
     while (g_running) {
-        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        auto nowSteady = steady_clock::now();
+        if (nowSteady < nextTickTime) {
+            auto sleepTime = duration_cast<milliseconds>(nextTickTime - nowSteady);
+            MsgWaitForMultipleObjects(0, NULL, FALSE, (DWORD)sleepTime.count(), QS_ALLINPUT);
+        }
+
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) g_running = false;
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
 
-        ProcessRawInput();
+        nowSteady = steady_clock::now();
+        if (nowSteady >= nextTickTime) {
+            int64_t highResTs = GetHighResTimestamp();
+            
+            // 1. Process Mouse
+            ProcessRawInput(highResTs);
+            
+            // 2. Poll Key State (including mouse buttons)
+            std::stringstream heldKeys;
+            
+            // Mouse buttons
+            if (g_mouseHeld[0]) heldKeys << "LB ";
+            if (g_mouseHeld[1]) heldKeys << "RB ";
+            if (g_mouseHeld[2]) heldKeys << "MB ";
+            if (g_mouseHeld[3]) heldKeys << "XB1 ";
+            if (g_mouseHeld[4]) heldKeys << "XB2 ";
 
-        DWORD now = GetTickCount();
-        if (now - lastCursorCheck >= 100) {
-            CheckCursorState(GetHighResTimestamp());
-            lastCursorCheck = now;
+            // Keyboard
+            for (int i = 0; i < 256; i++) {
+                if (g_keysHeld[i]) {
+                    std::string token = KeyCodeToToken(i);
+                    if (!token.empty()) {
+                        heldKeys << token << " ";
+                    }
+                }
+            }
+            
+            std::string keys = heldKeys.str();
+            // Trim trailing space
+            if (!keys.empty() && keys.back() == ' ') keys.pop_back();
+
+            {
+                std::lock_guard<std::mutex> lock(g_mutex);
+                g_logFile << highResTs << ",KEY_CHUNK," << keys << "\n";
+            }
+
+            CheckCursorState(highResTs);
+            
+            nextTickTime += tickDuration;
         }
-        Sleep(1);
     }
 
     std::cout << "Cleaning up..." << std::endl;

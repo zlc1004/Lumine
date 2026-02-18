@@ -90,6 +90,12 @@ VK_MAP["Num-"] = 0x6D
 VK_MAP["Num."] = 0x6E
 VK_MAP["Num/"] = 0x6F
 
+MOUSE_BTN_MAP = {
+    "LB": (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
+    "RB": (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
+    "MB": (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
+}
+
 
 def send_key(token, is_down):
     vk = VK_MAP.get(token)
@@ -98,27 +104,10 @@ def send_key(token, is_down):
         user32.keybd_event(vk, 0, flags, 0)
 
 
-def send_mouse_button(event):
-    if event == "LB_DOWN":
-        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    elif event == "LB_UP":
-        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    elif event == "RB_DOWN":
-        user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-    elif event == "RB_UP":
-        user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-    elif event == "MB_DOWN":
-        user32.mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0)
-    elif event == "MB_UP":
-        user32.mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0)
-    elif event == "XB1_DOWN":
-        pass
-    elif event == "XB1_UP":
-        pass
-    elif event == "XB2_DOWN":
-        pass
-    elif event == "XB2_UP":
-        pass
+def send_mouse_button(token, is_down):
+    flags = MOUSE_BTN_MAP.get(token)
+    if flags:
+        user32.mouse_event(flags[0] if is_down else flags[1], 0, 0, 0, 0)
 
 
 def send_mouse_wheel(delta):
@@ -128,8 +117,8 @@ def send_mouse_wheel(delta):
 def send_mouse_abs(x, y):
     screen_width = user32.GetSystemMetrics(0)
     screen_height = user32.GetSystemMetrics(1)
-    fx = int((x * 65535) / screen_width)
-    fy = int((y * 65535) / screen_height)
+    fx = int((x * 65535) / (screen_width - 1))
+    fy = int((y * 65535) / (screen_height - 1))
     user32.mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, fx, fy, 0, 0)
 
 
@@ -149,73 +138,89 @@ class Replay:
         self.loop = loop
         self.first_timestamp = self.events[0][0]
         self.running = True
+        self.held_keys = set()
+
+    def release_all(self):
+        for token in list(self.held_keys):
+            if token in MOUSE_BTN_MAP:
+                send_mouse_button(token, False)
+            else:
+                send_key(token, False)
+        self.held_keys.clear()
 
     def run(self):
         print(f"Replaying: {self.filepath}")
         print(f"Speed: {self.speed}x, Loop: {self.loop}")
-        print("Press ESC to stop...")
+        print("Press Ctrl+C to stop...")
 
-        while self.running:
-            start_time = time.perf_counter()
+        try:
+            while self.running:
+                start_time = time.perf_counter()
+                self.release_all()
 
-            for timestamp, event_type, data in self.events:
-                if not self.running:
-                    break
-
-                rel_time_filetime = timestamp - self.first_timestamp
-                rel_time_sec = rel_time_filetime / 10_000_000
-                wait_time = rel_time_sec / self.speed
-
-                while True:
-                    current_time = time.perf_counter()
-                    elapsed = current_time - start_time
-
-                    if elapsed >= wait_time:
+                for timestamp, event_type, data in self.events:
+                    if not self.running:
                         break
 
-                    time.sleep(0.001)
+                    rel_time_filetime = timestamp - self.first_timestamp
+                    rel_time_sec = rel_time_filetime / 10_000_000
+                    wait_time = rel_time_sec / self.speed
 
-                if event_type == "KEY" and len(data) >= 2:
-                    token = data[1]
-                    is_down = data[0] == "DOWN"
-                    send_key(token, is_down)
+                    while True:
+                        current_time = time.perf_counter()
+                        elapsed = current_time - start_time
 
-                elif event_type == "MOUSE" and len(data) >= 1:
-                    if data[0] in (
-                        "LB_DOWN",
-                        "LB_UP",
-                        "RB_DOWN",
-                        "RB_UP",
-                        "MB_DOWN",
-                        "MB_UP",
-                        "XB1_DOWN",
-                        "XB1_UP",
-                        "XB2_DOWN",
-                        "XB2_UP",
-                    ):
-                        send_mouse_button(data[0])
-                    elif data[0] == "WHEEL" and len(data) >= 2:
+                        if elapsed >= wait_time:
+                            break
+
+                        time.sleep(0.001)
+
+                    if event_type == "KEY_CHUNK":
+                        new_held = set(data[0].split()) if data else set()
+
+                        # Keys to press
+                        for token in new_held - self.held_keys:
+                            if token in MOUSE_BTN_MAP:
+                                send_mouse_button(token, True)
+                            else:
+                                send_key(token, True)
+
+                        # Keys to release
+                        for token in self.held_keys - new_held:
+                            if token in MOUSE_BTN_MAP:
+                                send_mouse_button(token, False)
+                            else:
+                                send_key(token, False)
+
+                        self.held_keys = new_held
+
+                    elif event_type == "MOUSE" and len(data) >= 2:
+                        if data[0] == "WHEEL":
+                            try:
+                                send_mouse_wheel(int(data[1]))
+                            except ValueError:
+                                pass
+
+                    elif event_type == "MOUSE_ABS" and len(data) >= 2:
                         try:
-                            send_mouse_wheel(int(data[1]))
+                            send_mouse_abs(int(data[0]), int(data[1]))
                         except ValueError:
                             pass
 
-                elif event_type == "MOUSE_ABS" and len(data) >= 2:
-                    try:
-                        send_mouse_abs(int(data[0]), int(data[1]))
-                    except ValueError:
-                        pass
+                    elif event_type == "MOUSE_REL" and len(data) >= 2:
+                        try:
+                            send_mouse_rel(int(data[0]), int(data[1]))
+                        except ValueError:
+                            pass
 
-                elif event_type == "MOUSE_REL" and len(data) >= 2:
-                    try:
-                        send_mouse_rel(int(data[0]), int(data[1]))
-                    except ValueError:
-                        pass
-
-            if self.loop and self.running:
-                print("Looping...")
-            else:
-                break
+                if self.loop and self.running:
+                    print("Looping...")
+                else:
+                    break
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.release_all()
 
         print("Replay finished.")
 

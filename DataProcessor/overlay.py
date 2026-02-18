@@ -49,8 +49,10 @@ class Overlay:
         self.center = (info.current_w // 2, info.current_h // 2)
         self.grid_pos = list(self.center)
         self.cursor_locked = False
+        self.held_keys = set()
 
         self.font = pygame.font.Font(None, 36)
+        self.small_font = pygame.font.Font(None, 24)
         self.grid_spacing = 50
 
         self.set_layered_window()
@@ -88,7 +90,11 @@ class Overlay:
         for timestamp, event_type, data in self.events:
             if timestamp > current_timestamp:
                 break
-            if event_type == "MOUSE":
+
+            if event_type == "KEY_CHUNK":
+                self.held_keys = set(data[0].split()) if data else set()
+
+            elif event_type == "MOUSE":
                 if len(data) > 0:
                     if data[0] == "LOCK":
                         self.cursor_locked = True
@@ -100,12 +106,6 @@ class Overlay:
                 try:
                     x = int(data[0])
                     y = int(data[1])
-                except ValueError:
-                    pass
-            elif event_type == "MOUSE_RAW_REL" and len(data) >= 2:
-                try:
-                    self.rel_x += int(data[0])
-                    self.rel_y += int(data[1])
                 except ValueError:
                     pass
             elif event_type == "MOUSE_REL" and len(data) >= 2:
@@ -183,16 +183,24 @@ class Overlay:
                 pygame.draw.circle(self.screen, (255, 0, 0), pos, 20, 3)
                 mode_text = "MENU (ABS)"
 
+            # Draw status bar
             time_text = self.get_display_time()
+            held_text = "Keys: " + " ".join(sorted(list(self.held_keys)))
+
             text_surface = self.font.render(
                 f"{time_text} | {mode_text}", True, (255, 255, 255)
             )
             text_rect = text_surface.get_rect(topleft=(10, 10))
 
-            bg_rect = text_rect.inflate(10, 5)
+            held_surface = self.small_font.render(held_text, True, (200, 200, 200))
+            held_rect = held_surface.get_rect(topleft=(10, 50))
+
+            bg_rect = text_rect.union(held_rect).inflate(10, 10)
             pygame.draw.rect(self.screen, (0, 0, 0), bg_rect)
             pygame.draw.rect(self.screen, (255, 0, 0), bg_rect, 1)
+
             self.screen.blit(text_surface, text_rect)
+            self.screen.blit(held_surface, held_rect)
 
             pygame.display.flip()
             self.clock.tick(60)
