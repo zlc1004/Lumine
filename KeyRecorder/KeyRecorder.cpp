@@ -18,6 +18,9 @@ HHOOK g_keyboardHook = nullptr;
 HHOOK g_mouseHook = nullptr;
 bool g_cursorVisible = true;
 bool g_isClipped = false;
+int g_lastMouseX = 0;
+int g_lastMouseY = 0;
+bool g_initialMousePosSet = false;
 
 inline int64_t GetHighResTimestamp() {
     FILETIME ft;
@@ -176,9 +179,6 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
 }
 
-static int g_lastMouseX = 0;
-static int g_lastMouseY = 0;
-
 LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0) {
         MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
@@ -195,8 +195,6 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 if (dx != 0 || dy != 0) {
                     LogMouseRel(timestamp, dx, dy);
                 }
-            } else {
-                LogMouseAbs(timestamp, x, y);
             }
             g_lastMouseX = x;
             g_lastMouseY = y;
@@ -347,12 +345,11 @@ int main(int argc, char* argv[]) {
         g_lastMouseY = cursorPos.y;
     }
 
-    std::cout << "SDL initialized" << std::endl;
-    std::cout << std::endl;
     std::cout << "Recording started... (Press ESC to stop)" << std::endl;
 
     MSG msg;
     DWORD lastCursorCheck = GetTickCount();
+    DWORD lastMousePoll = GetTickCount();
 
     while (g_running) {
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -361,6 +358,24 @@ int main(int argc, char* argv[]) {
         }
 
         DWORD now = GetTickCount();
+
+        if (now - lastMousePoll >= 1) {
+            if (!g_isClipped) {
+                POINT pos;
+                if (GetCursorPos(&pos)) {
+                    int64_t timestamp = GetHighResTimestamp();
+                    int dx = pos.x - g_lastMouseX;
+                    int dy = pos.y - g_lastMouseY;
+                    if (dx != 0 || dy != 0) {
+                        LogMouseAbs(timestamp, pos.x, pos.y);
+                    }
+                    g_lastMouseX = pos.x;
+                    g_lastMouseY = pos.y;
+                }
+            }
+            lastMousePoll = now;
+        }
+
         if (now - lastCursorCheck >= 100) {
             CheckCursorState(GetHighResTimestamp());
             lastCursorCheck = now;
