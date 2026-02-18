@@ -8,3 +8,7 @@ package.json
 .conda
 .ruff_cache
 papers
+VeOmni
+models
+data
+tmp
