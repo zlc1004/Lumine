@@ -33,7 +33,7 @@ class Overlay:
         self.first_timestamp = self.events[0][0]
         self.program_start = time.time()
         self.offset = self.first_timestamp
-
+        self.rel_x, self.rel_y = 0, 0
         pygame.init()
         pygame.display.set_caption("Mouse Recorder Overlay")
 
@@ -48,7 +48,6 @@ class Overlay:
 
         self.center = (info.current_w // 2, info.current_h // 2)
         self.grid_pos = list(self.center)
-        self.cursor_visible = True
         self.cursor_locked = False
 
         self.font = pygame.font.Font(None, 36)
@@ -80,25 +79,21 @@ class Overlay:
         ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)
 
     def get_current_state(self):
+        global rel_x, rel_y
         elapsed_sec = time.time() - self.program_start
         elapsed_filetime = int(elapsed_sec * 10_000_000)
         current_timestamp = self.offset + elapsed_filetime
 
         x, y = None, None
-        rel_x, rel_y = 0, 0
 
         for timestamp, event_type, data in self.events:
             if timestamp > current_timestamp:
                 break
-
             if event_type == "MOUSE":
                 if len(data) > 0:
-                    if data[0] == "SHOW":
-                        self.cursor_visible = True
-                    elif data[0] == "HIDE":
-                        self.cursor_visible = False
-                    elif data[0] == "LOCK":
+                    if data[0] == "LOCK":
                         self.cursor_locked = True
+                        self.rel_x, self.rel_y = 0, 0
                     elif data[0] == "UNLOCK":
                         self.cursor_locked = False
             elif event_type == "MOUSE_ABS" and len(data) >= 2:
@@ -109,17 +104,17 @@ class Overlay:
                     pass
             elif event_type == "MOUSE_REL" and len(data) >= 2:
                 try:
-                    rel_x += int(data[0])
-                    rel_y += int(data[1])
+                    self.rel_x += int(data[0])
+                    self.rel_y += int(data[1])
                 except ValueError:
                     pass
 
-        is_aim_mode = not self.cursor_visible or self.cursor_locked
+        is_aim_mode = self.cursor_locked
 
         if is_aim_mode:
-            if rel_x != 0 or rel_y != 0:
-                self.grid_pos[0] = (self.grid_pos[0] + rel_x) % self.screen.get_width()
-                self.grid_pos[1] = (self.grid_pos[1] + rel_y) % self.screen.get_height()
+            if self.rel_x != 0 or self.rel_y != 0:
+                self.grid_pos[0] = (self.grid_pos[0] + self.rel_x) % self.screen.get_width()
+                self.grid_pos[1] = (self.grid_pos[1] + self.rel_y) % self.screen.get_height()
             return self.grid_pos, is_aim_mode
         else:
             if x is not None and y is not None:
