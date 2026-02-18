@@ -1,5 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
+#include <windowsx.h>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -11,16 +12,58 @@
 #include <sstream>
 #include <iomanip>
 
+#ifndef QWORD
+typedef unsigned long long QWORD;
+#endif
+#include <mutex>
+#include <sstream>
+#include <iomanip>
+
 std::ofstream g_logFile;
 std::mutex g_mutex;
 std::atomic<bool> g_running(true);
 HHOOK g_keyboardHook = nullptr;
-HHOOK g_mouseHook = nullptr;
 bool g_cursorVisible = true;
 bool g_isClipped = false;
 int g_lastMouseX = 0;
 int g_lastMouseY = 0;
-bool g_initialMousePosSet = false;
+
+struct MouseDelta {
+    long dx = 0;
+    long dy = 0;
+};
+
+class MouseTracker {
+public:
+    MouseDelta GetDeltaSinceLastPull() {
+        MouseDelta totalDelta;
+        UINT cbSize;
+        
+        GetRawInputBuffer(NULL, &cbSize, sizeof(RAWINPUTHEADER));
+        cbSize *= 16;
+
+        std::vector<BYTE> buffer(cbSize);
+        PRAWINPUT pRawInput = reinterpret_cast<PRAWINPUT>(buffer.data());
+
+        UINT count = GetRawInputBuffer(pRawInput, &cbSize, sizeof(RAWINPUTHEADER));
+        
+        if (count == (UINT)-1) return totalDelta;
+
+        for (UINT i = 0; i < count; ++i) {
+            if (pRawInput->header.dwType == RIM_TYPEMOUSE) {
+                if (!(pRawInput->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+                    totalDelta.dx += pRawInput->data.mouse.lLastX;
+                    totalDelta.dy += pRawInput->data.mouse.lLastY;
+                }
+            }
+            pRawInput = NEXTRAWINPUTBLOCK(pRawInput);
+        }
+        
+        return totalDelta;
+    }
+};
+
+MouseTracker g_mouseTracker;
 
 inline int64_t GetHighResTimestamp() {
     FILETIME ft;
@@ -179,56 +222,57 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
 }
 
-LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode >= 0) {
-        MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
-        int64_t timestamp = GetHighResTimestamp();
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_INPUT) {
+        UINT cbSize;
+        GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &cbSize, sizeof(RAWINPUTHEADER));
         
-        switch (wParam) {
-        case WM_MOUSEMOVE: {
-            int x = pMouseStruct->pt.x;
-            int y = pMouseStruct->pt.y;
+        std::vector<BYTE> buffer(cbSize);
+        if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, buffer.data(), &cbSize, sizeof(RAWINPUTHEADER)) == cbSize) {
+            PRAWINPUT pRawInput = reinterpret_cast<PRAWINPUT>(buffer.data());
             
-            if (g_isClipped) {
-                int dx = x - g_lastMouseX;
-                int dy = y - g_lastMouseY;
-                if (dx != 0 || dy != 0) {
-                    LogMouseRel(timestamp, dx, dy);
+            if (pRawInput->header.dwType == RIM_TYPEMOUSE) {
+                int64_t timestamp = GetHighResTimestamp();
+                
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
+                    LogMouseButton(timestamp, "LB_DOWN");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
+                    LogMouseButton(timestamp, "LB_UP");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
+                    LogMouseButton(timestamp, "RB_DOWN");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
+                    LogMouseButton(timestamp, "RB_UP");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
+                    LogMouseButton(timestamp, "MB_DOWN");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
+                    LogMouseButton(timestamp, "MB_UP");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_4_DOWN) {
+                    LogMouseButton(timestamp, "XB1_DOWN");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_4_UP) {
+                    LogMouseButton(timestamp, "XB1_UP");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_5_DOWN) {
+                    LogMouseButton(timestamp, "XB2_DOWN");
+                }
+                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_5_UP) {
+                    LogMouseButton(timestamp, "XB2_UP");
+                }
+                
+                short wheelDelta = (short)HIWORD(pRawInput->data.mouse.usButtonData);
+                if (wheelDelta != 0) {
+                    LogMouseWheel(timestamp, wheelDelta);
                 }
             }
-            g_lastMouseX = x;
-            g_lastMouseY = y;
-            break;
-        }
-        case WM_LBUTTONDOWN: LogMouseButton(timestamp, "LB_DOWN"); break;
-        case WM_LBUTTONUP: LogMouseButton(timestamp, "LB_UP"); break;
-        case WM_RBUTTONDOWN: LogMouseButton(timestamp, "RB_DOWN"); break;
-        case WM_RBUTTONUP: LogMouseButton(timestamp, "RB_UP"); break;
-        case WM_MBUTTONDOWN: LogMouseButton(timestamp, "MB_DOWN"); break;
-        case WM_MBUTTONUP: LogMouseButton(timestamp, "MB_UP"); break;
-        case WM_XBUTTONDOWN: {
-            DWORD fwButton = HIWORD(pMouseStruct->mouseData);
-            LogMouseButton(timestamp, fwButton == 1 ? "XB1_DOWN" : "XB2_DOWN");
-            break;
-        }
-        case WM_XBUTTONUP: {
-            DWORD fwButton = HIWORD(pMouseStruct->mouseData);
-            LogMouseButton(timestamp, fwButton == 1 ? "XB1_UP" : "XB2_UP");
-            break;
-        }
-        case WM_MOUSEWHEEL: {
-            short delta = HIWORD(pMouseStruct->mouseData);
-            LogMouseWheel(timestamp, delta);
-            break;
-        }
-        case WM_MOUSEHWHEEL: {
-            short delta = HIWORD(pMouseStruct->mouseData);
-            LogMouseWheel(timestamp, delta);
-            break;
-        }
         }
     }
-    return CallNextHookEx(g_mouseHook, nCode, wParam, lParam);
+    return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
 void CheckCursorState(int64_t timestamp) {
@@ -323,6 +367,26 @@ int main(int argc, char* argv[]) {
     g_logFile << "#" << std::endl;
     g_logFile.flush();
 
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"KeyRecorderWindow";
+    RegisterClass(&wc);
+
+    HWND hwnd = CreateWindowExW(0, L"KeyRecorderWindow", L"KeyRecorder", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
+
+    RAWINPUTDEVICE rid;
+    rid.usUsagePage = 0x01;
+    rid.usUsage = 0x02;
+    rid.dwFlags = RIDEV_INPUTSINK;
+    rid.hwndTarget = hwnd;
+    
+    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid))) {
+        std::cerr << "Failed to register raw input: " << GetLastError() << std::endl;
+    } else {
+        std::cout << "Raw input registered successfully" << std::endl;
+    }
+
     HINSTANCE hInstance = GetModuleHandle(NULL);
 
     g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardHookProc, hInstance, 0);
@@ -330,13 +394,6 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to install keyboard hook: " << GetLastError() << std::endl;
     } else {
         std::cout << "Keyboard hook installed successfully" << std::endl;
-    }
-
-    g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, hInstance, 0);
-    if (!g_mouseHook) {
-        std::cerr << "Failed to install mouse hook: " << GetLastError() << std::endl;
-    } else {
-        std::cout << "Mouse hook installed successfully" << std::endl;
     }
 
     POINT cursorPos;
@@ -349,7 +406,6 @@ int main(int argc, char* argv[]) {
 
     MSG msg;
     DWORD lastCursorCheck = GetTickCount();
-    DWORD lastMousePoll = GetTickCount();
 
     while (g_running) {
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -357,25 +413,19 @@ int main(int argc, char* argv[]) {
             DispatchMessage(&msg);
         }
 
-        DWORD now = GetTickCount();
-
-        if (now - lastMousePoll >= 1) {
-            if (!g_isClipped) {
-                POINT pos;
-                if (GetCursorPos(&pos)) {
-                    int64_t timestamp = GetHighResTimestamp();
-                    int dx = pos.x - g_lastMouseX;
-                    int dy = pos.y - g_lastMouseY;
-                    if (dx != 0 || dy != 0) {
-                        LogMouseAbs(timestamp, pos.x, pos.y);
-                    }
-                    g_lastMouseX = pos.x;
-                    g_lastMouseY = pos.y;
-                }
+        MouseDelta delta = g_mouseTracker.GetDeltaSinceLastPull();
+        if (delta.dx != 0 || delta.dy != 0) {
+            int64_t timestamp = GetHighResTimestamp();
+            if (g_isClipped) {
+                LogMouseRel(timestamp, delta.dx, delta.dy);
+            } else {
+                g_lastMouseX += delta.dx;
+                g_lastMouseY += delta.dy;
+                LogMouseAbs(timestamp, g_lastMouseX, g_lastMouseY);
             }
-            lastMousePoll = now;
         }
 
+        DWORD now = GetTickCount();
         if (now - lastCursorCheck >= 100) {
             CheckCursorState(GetHighResTimestamp());
             lastCursorCheck = now;
@@ -390,14 +440,12 @@ int main(int argc, char* argv[]) {
         g_keyboardHook = nullptr;
     }
 
-    if (g_mouseHook) {
-        UnhookWindowsHookEx(g_mouseHook);
-        g_mouseHook = nullptr;
-    }
-
     if (g_logFile.is_open()) {
         g_logFile.close();
     }
+
+    DestroyWindow(hwnd);
+    UnregisterClassW(L"KeyRecorderWindow", GetModuleHandle(NULL));
     
     std::cout << "Recording stopped. Log saved to: " << outputFile << std::endl;
     
