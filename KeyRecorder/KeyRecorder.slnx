@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="KeyRecorder/KeyRecorder.vcxproj" />
+  <Project Path="KeyRecorder.vcxproj" Id="e3bc47b6-79fc-46c7-8570-319fdd118db6" />
 </Solution>

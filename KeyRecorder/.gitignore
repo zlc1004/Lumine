@@ -21,3 +21,4 @@ Release/
 # Intermediate files
 *.vspscc
 *.vssscc
+SDL2-2.32.10

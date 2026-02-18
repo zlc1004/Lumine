@@ -79,7 +79,6 @@ class Overlay:
         ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)
 
     def get_current_state(self):
-        global rel_x, rel_y
         elapsed_sec = time.time() - self.program_start
         elapsed_filetime = int(elapsed_sec * 10_000_000)
         current_timestamp = self.offset + elapsed_filetime
@@ -102,6 +101,12 @@ class Overlay:
                     y = int(data[1])
                 except ValueError:
                     pass
+            elif event_type == "MOUSE_RAW_REL" and len(data) >= 2:
+                try:
+                    self.rel_x += int(data[0])
+                    self.rel_y += int(data[1])
+                except ValueError:
+                    pass
             elif event_type == "MOUSE_REL" and len(data) >= 2:
                 try:
                     self.rel_x += int(data[0])
@@ -113,7 +118,7 @@ class Overlay:
 
         if is_aim_mode:
             if self.rel_x != 0 or self.rel_y != 0:
-                self.grid_pos = [self.rel_x,self.rel_y]
+                self.grid_pos = [self.rel_x, self.rel_y]
             return self.grid_pos, is_aim_mode
         else:
             if x is not None and y is not None:
