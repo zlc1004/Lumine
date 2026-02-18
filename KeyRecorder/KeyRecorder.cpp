@@ -24,8 +24,12 @@ HHOOK g_keyboardHook = nullptr;
 HHOOK g_mouseHook = nullptr;
 LPDIRECTINPUT8 g_directInput = nullptr;
 LPDIRECTINPUTDEVICE8 g_mouseDevice = nullptr;
+bool g_cursorVisible = true;
+RECT g_clipRect = {0, 0, 0, 0};
+bool g_isClipped = false;
 
-// High-resolution timestamp
+void CheckCursorState(int64_t timestamp);
+
 inline int64_t GetHighResTimestamp() {
     FILETIME ft;
     GetSystemTimePreciseAsFileTime(&ft);
@@ -185,6 +189,7 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
         
         switch (wParam) {
         case WM_MOUSEMOVE: {
+            CheckCursorState(timestamp);
             MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
             std::lock_guard<std::mutex> lock(g_mutex);
             if (g_logFile.is_open()) {
@@ -193,6 +198,7 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_LBUTTONDOWN: {
+            CheckCursorState(timestamp);
             std::lock_guard<std::mutex> lock(g_mutex);
             if (g_logFile.is_open()) {
                 g_logFile << timestamp << ",MOUSE,LB_DOWN\n";
@@ -327,10 +333,22 @@ bool InitDirectInput(HINSTANCE hInstance) {
     // Set cooperative level (exclusive if foreground, otherwise non-exclusive)
     HWND hwnd = GetForegroundWindow();
     if (!hwnd) hwnd = GetConsoleWindow();
-    hr = g_mouseDevice->SetCooperativeLevel(hwnd, DISCL_NONEXCLUSIVE | DISCL_FOREGROUND);
+    hr = g_mouseDevice->SetCooperativeLevel(hwnd, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND);
     if (FAILED(hr)) {
         std::cerr << "Failed to set cooperative level" << std::endl;
         return false;
+    }
+
+    // Set relative mouse mode BEFORE acquiring
+    DIPROPDWORD dipdw;
+    dipdw.diph.dwSize = sizeof(DIPROPDWORD);
+    dipdw.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+    dipdw.diph.dwObj = 0;
+    dipdw.diph.dwHow = DIPH_DEVICE;
+    dipdw.dwData = DIPROPAXISMODE_REL;
+    hr = g_mouseDevice->SetProperty(DIPROP_AXISMODE, &dipdw.diph);
+    if (FAILED(hr)) {
+        std::cerr << "Warning: Failed to set relative mouse mode" << std::endl;
     }
 
     // Acquire the device
@@ -340,6 +358,43 @@ bool InitDirectInput(HINSTANCE hInstance) {
     }
 
     return true;
+}
+
+// Check and log cursor state changes
+void CheckCursorState(int64_t timestamp) {
+    CURSORINFO ci = {sizeof(CURSORINFO)};
+    if (GetCursorInfo(&ci)) {
+        bool visible = (ci.flags & (CURSOR_SHOWING | CURSOR_SUPPRESSED)) != 0;
+        if (visible != g_cursorVisible) {
+            g_cursorVisible = visible;
+            std::lock_guard<std::mutex> lock(g_mutex);
+            if (g_logFile.is_open()) {
+                g_logFile << timestamp << ",MOUSE," << (visible ? "SHOW" : "HIDE") << "\n";
+            }
+        }
+    }
+    
+    RECT clipRect;
+    if (GetClipCursor(&clipRect)) {
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        int clipWidth = clipRect.right - clipRect.left;
+        int clipHeight = clipRect.bottom - clipRect.top;
+        bool clipped = (clipWidth < screenWidth || clipHeight < screenHeight);
+        if (clipped != g_isClipped) {
+            g_isClipped = clipped;
+            std::lock_guard<std::mutex> lock(g_mutex);
+            if (g_logFile.is_open()) {
+                g_logFile << timestamp << ",MOUSE," << (clipped ? "LOCK" : "UNLOCK") << "\n";
+            }
+        }
+    } else if (g_isClipped) {
+        g_isClipped = false;
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (g_logFile.is_open()) {
+            g_logFile << timestamp << ",MOUSE,UNLOCK\n";
+        }
+    }
 }
 
 // Cleanup
@@ -430,6 +485,8 @@ int main(int argc, char* argv[]) {
     g_logFile << "#   MOUSE_ABS,x,y" << std::endl;
     g_logFile << "#   MOUSE_REL,dx,dy" << std::endl;
     g_logFile << "#   MOUSE,WHEEL,delta" << std::endl;
+    g_logFile << "#   MOUSE,SHOW|HIDE" << std::endl;
+    g_logFile << "#   MOUSE,LOCK|UNLOCK" << std::endl;
     g_logFile << "#" << std::endl;
     g_logFile.flush();
 
@@ -465,11 +522,17 @@ int main(int argc, char* argv[]) {
 
     // Message loop
     MSG msg;
+    DWORD lastCursorCheck = GetTickCount();
     while (g_running) {
         if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         } else {
+            DWORD now = GetTickCount();
+            if (now - lastCursorCheck >= 100) {
+                CheckCursorState(GetHighResTimestamp());
+                lastCursorCheck = now;
+            }
             Sleep(1); // Prevent busy-waiting
         }
     }
