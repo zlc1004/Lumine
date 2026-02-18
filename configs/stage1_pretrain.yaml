@@ -1,5 +1,6 @@
 # Lumine Stage 1: Pre-training Config
 # Train on image-action pairs to learn action primitives
+# 4x A40 (192GB VRAM)
 
 model:
   model_path: models/Qwen2-VL-7B-Base
@@ -31,8 +32,9 @@ train:
   lr_decay_style: cosine
   num_train_epochs: 3
   micro_batch_size: 1
-  global_batch_size: 8
+  global_batch_size: 32
   max_steps: 10000
   save_steps: 1000
   save_epochs: 1
   save_hf_weights: true
+  enable_gradient_checkpointing: true

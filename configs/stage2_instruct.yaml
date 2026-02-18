@@ -1,5 +1,6 @@
 # Lumine Stage 2: Instruction-Following Config
 # Train on instruction-image-action to learn language grounding
+# 4x A40 (192GB VRAM)
 
 model:
   model_path: output/lumine_stage1_pretrain/hf_ckpt
@@ -31,8 +32,9 @@ train:
   lr_decay_style: cosine
   num_train_epochs: 3
   micro_batch_size: 1
-  global_batch_size: 8
+  global_batch_size: 16
   max_steps: 5000
   save_steps: 500
   save_epochs: 1
   save_hf_weights: true
+  enable_gradient_checkpointing: true
