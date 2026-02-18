@@ -114,7 +114,7 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
         if (isDown) g_keysHeld[kbStruct->vkCode] = true;
         if (isUp) g_keysHeld[kbStruct->vkCode] = false;
 
-        if (kbStruct->vkCode == VK_ESCAPE && isDown) {
+        if (kbStruct->vkCode == VK_F5 && isDown) {
             g_running = false;
         }
     }
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Output file: " << outputFile << std::endl;
     std::cout << std::endl;
     std::cout << "Controls:" << std::endl;
-    std::cout << "  Press ESC to stop recording" << std::endl;
+    std::cout << "  Press F5 to stop recording" << std::endl;
     std::cout << std::endl;
 
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
