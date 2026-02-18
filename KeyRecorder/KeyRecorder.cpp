@@ -15,9 +15,6 @@
 #ifndef QWORD
 typedef unsigned long long QWORD;
 #endif
-#include <mutex>
-#include <sstream>
-#include <iomanip>
 
 std::ofstream g_logFile;
 std::mutex g_mutex;
@@ -28,42 +25,8 @@ bool g_isClipped = false;
 int g_lastMouseX = 0;
 int g_lastMouseY = 0;
 
-struct MouseDelta {
-    long dx = 0;
-    long dy = 0;
-};
-
-class MouseTracker {
-public:
-    MouseDelta GetDeltaSinceLastPull() {
-        MouseDelta totalDelta;
-        UINT cbSize;
-        
-        GetRawInputBuffer(NULL, &cbSize, sizeof(RAWINPUTHEADER));
-        cbSize *= 16;
-
-        std::vector<BYTE> buffer(cbSize);
-        PRAWINPUT pRawInput = reinterpret_cast<PRAWINPUT>(buffer.data());
-
-        UINT count = GetRawInputBuffer(pRawInput, &cbSize, sizeof(RAWINPUTHEADER));
-        
-        if (count == (UINT)-1) return totalDelta;
-
-        for (UINT i = 0; i < count; ++i) {
-            if (pRawInput->header.dwType == RIM_TYPEMOUSE) {
-                if (!(pRawInput->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                    totalDelta.dx += pRawInput->data.mouse.lLastX;
-                    totalDelta.dy += pRawInput->data.mouse.lLastY;
-                }
-            }
-            pRawInput = NEXTRAWINPUTBLOCK(pRawInput);
-        }
-        
-        return totalDelta;
-    }
-};
-
-MouseTracker g_mouseTracker;
+std::vector<RAWINPUT> g_pendingRawInput;
+std::mutex g_rawInputMutex;
 
 inline int64_t GetHighResTimestamp() {
     FILETIME ft;
@@ -229,50 +192,63 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         
         std::vector<BYTE> buffer(cbSize);
         if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, buffer.data(), &cbSize, sizeof(RAWINPUTHEADER)) == cbSize) {
-            PRAWINPUT pRawInput = reinterpret_cast<PRAWINPUT>(buffer.data());
+            RAWINPUT* pRawInput = reinterpret_cast<RAWINPUT*>(buffer.data());
             
             if (pRawInput->header.dwType == RIM_TYPEMOUSE) {
-                int64_t timestamp = GetHighResTimestamp();
-                
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-                    LogMouseButton(timestamp, "LB_DOWN");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
-                    LogMouseButton(timestamp, "LB_UP");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
-                    LogMouseButton(timestamp, "RB_DOWN");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
-                    LogMouseButton(timestamp, "RB_UP");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
-                    LogMouseButton(timestamp, "MB_DOWN");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
-                    LogMouseButton(timestamp, "MB_UP");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_4_DOWN) {
-                    LogMouseButton(timestamp, "XB1_DOWN");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_4_UP) {
-                    LogMouseButton(timestamp, "XB1_UP");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_5_DOWN) {
-                    LogMouseButton(timestamp, "XB2_DOWN");
-                }
-                if (pRawInput->data.mouse.usButtonFlags & RI_MOUSE_BUTTON_5_UP) {
-                    LogMouseButton(timestamp, "XB2_UP");
-                }
-                
-                short wheelDelta = (short)HIWORD(pRawInput->data.mouse.usButtonData);
-                if (wheelDelta != 0) {
-                    LogMouseWheel(timestamp, wheelDelta);
-                }
+                std::lock_guard<std::mutex> lock(g_rawInputMutex);
+                g_pendingRawInput.push_back(*pRawInput);
             }
         }
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+void ProcessRawInput() {
+    std::vector<RAWINPUT> rawCopy;
+    {
+        std::lock_guard<std::mutex> lock(g_rawInputMutex);
+        rawCopy = std::move(g_pendingRawInput);
+        g_pendingRawInput.clear();
+    }
+    
+    for (const RAWINPUT& raw : rawCopy) {
+        if (raw.header.dwType != RIM_TYPEMOUSE) continue;
+        
+        int64_t timestamp = GetHighResTimestamp();
+        USHORT flags = raw.data.mouse.usFlags;
+        
+        if (!(flags & MOUSE_MOVE_ABSOLUTE)) {
+            long dx = raw.data.mouse.lLastX;
+            long dy = raw.data.mouse.lLastY;
+            if (dx != 0 || dy != 0) {
+                if (g_isClipped) {
+                    LogMouseRel(timestamp, dx, dy);
+                } else {
+                    g_lastMouseX += dx;
+                    g_lastMouseY += dy;
+                    LogMouseAbs(timestamp, g_lastMouseX, g_lastMouseY);
+                }
+            }
+        }
+        
+        USHORT btnFlags = raw.data.mouse.usButtonFlags;
+        
+        if (btnFlags & RI_MOUSE_LEFT_BUTTON_DOWN) LogMouseButton(timestamp, "LB_DOWN");
+        if (btnFlags & RI_MOUSE_LEFT_BUTTON_UP) LogMouseButton(timestamp, "LB_UP");
+        if (btnFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) LogMouseButton(timestamp, "RB_DOWN");
+        if (btnFlags & RI_MOUSE_RIGHT_BUTTON_UP) LogMouseButton(timestamp, "RB_UP");
+        if (btnFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) LogMouseButton(timestamp, "MB_DOWN");
+        if (btnFlags & RI_MOUSE_MIDDLE_BUTTON_UP) LogMouseButton(timestamp, "MB_UP");
+        if (btnFlags & RI_MOUSE_BUTTON_4_DOWN) LogMouseButton(timestamp, "XB1_DOWN");
+        if (btnFlags & RI_MOUSE_BUTTON_4_UP) LogMouseButton(timestamp, "XB1_UP");
+        if (btnFlags & RI_MOUSE_BUTTON_5_DOWN) LogMouseButton(timestamp, "XB2_DOWN");
+        if (btnFlags & RI_MOUSE_BUTTON_5_UP) LogMouseButton(timestamp, "XB2_UP");
+        
+        short wheelDelta = (short)HIWORD(raw.data.mouse.usButtonData);
+        if (wheelDelta != 0) {
+            LogMouseWheel(timestamp, wheelDelta);
+        }
+    }
 }
 
 void CheckCursorState(int64_t timestamp) {
@@ -413,17 +389,7 @@ int main(int argc, char* argv[]) {
             DispatchMessage(&msg);
         }
 
-        MouseDelta delta = g_mouseTracker.GetDeltaSinceLastPull();
-        if (delta.dx != 0 || delta.dy != 0) {
-            int64_t timestamp = GetHighResTimestamp();
-            if (g_isClipped) {
-                LogMouseRel(timestamp, delta.dx, delta.dy);
-            } else {
-                g_lastMouseX += delta.dx;
-                g_lastMouseY += delta.dy;
-                LogMouseAbs(timestamp, g_lastMouseX, g_lastMouseY);
-            }
-        }
+        ProcessRawInput();
 
         DWORD now = GetTickCount();
         if (now - lastCursorCheck >= 100) {
