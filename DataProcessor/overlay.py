@@ -113,8 +113,7 @@ class Overlay:
 
         if is_aim_mode:
             if self.rel_x != 0 or self.rel_y != 0:
-                self.grid_pos[0] = (self.grid_pos[0] + self.rel_x) % self.screen.get_width()
-                self.grid_pos[1] = (self.grid_pos[1] + self.rel_y) % self.screen.get_height()
+                self.grid_pos = [self.rel_x,self.rel_y]
             return self.grid_pos, is_aim_mode
         else:
             if x is not None and y is not None:
