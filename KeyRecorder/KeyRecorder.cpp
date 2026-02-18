@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <dinput.h>
 #include <iostream>
@@ -12,6 +13,7 @@
 #include <iomanip>
 
 #pragma comment(lib, "dinput8.lib")
+#pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "winmm.lib")
 
 // Global state
@@ -147,17 +149,29 @@ DWORD GetVirtualKeyCode(WPARAM wParam, LPARAM lParam) {
 // Keyboard hook procedure
 LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0) {
-        DWORD vkCode = GetVirtualKeyCode(wParam, lParam);
+        // Check for ESC to stop recording
+        if (wParam == VK_ESCAPE) {
+            g_running = false;
+            return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
+        }
+        
         bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-        bool isExtended = (lParam & 0x01000000) != 0;
+        bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+        
+        if (isDown || isUp) {
+            KBDLLHOOKSTRUCT* kbStruct = (KBDLLHOOKSTRUCT*)lParam;
+            DWORD vkCode = kbStruct->vkCode;
+            bool isExtended = (kbStruct->flags & LLKHF_EXTENDED) != 0;
 
-        std::string token = KeyCodeToToken(vkCode, isExtended);
-        if (!token.empty()) {
-            int64_t timestamp = GetHighResTimestamp();
-            
-            std::lock_guard<std::mutex> lock(g_mutex);
-            if (g_logFile.is_open()) {
-                g_logFile << timestamp << ",KEY," << (isDown ? "DOWN" : "UP") << "," << token << "\n";
+            std::string token = KeyCodeToToken(vkCode, isExtended);
+            if (!token.empty()) {
+                int64_t timestamp = GetHighResTimestamp();
+                
+                std::lock_guard<std::mutex> lock(g_mutex);
+                if (g_logFile.is_open()) {
+                    g_logFile << timestamp << ",KEY," << (isDown ? "DOWN" : "UP") << "," << token << "\n";
+                    g_logFile.flush();
+                }
             }
         }
     }
@@ -451,13 +465,13 @@ int main(int argc, char* argv[]) {
 
     // Message loop
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        // Check for ESC key
-        if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
-            break;
+    while (g_running) {
+        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        } else {
+            Sleep(1); // Prevent busy-waiting
         }
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
     }
 
     // Cleanup
