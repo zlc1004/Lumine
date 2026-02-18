@@ -91,14 +91,16 @@ class Overlay:
             if timestamp > current_timestamp:
                 break
 
-            if event_type == "MOUSE_SHOW":
-                self.cursor_visible = True
-            elif event_type == "MOUSE_HIDE":
-                self.cursor_visible = False
-            elif event_type == "LOCK":
-                self.cursor_locked = True
-            elif event_type == "UNLOCK":
-                self.cursor_locked = False
+            if event_type == "MOUSE":
+                if len(data) > 0:
+                    if data[0] == "SHOW":
+                        self.cursor_visible = True
+                    elif data[0] == "HIDE":
+                        self.cursor_visible = False
+                    elif data[0] == "LOCK":
+                        self.cursor_locked = True
+                    elif data[0] == "UNLOCK":
+                        self.cursor_locked = False
             elif event_type == "MOUSE_ABS" and len(data) >= 2:
                 try:
                     x = int(data[0])
@@ -115,8 +117,9 @@ class Overlay:
         is_aim_mode = not self.cursor_visible or self.cursor_locked
 
         if is_aim_mode:
-            self.grid_pos[0] = (self.grid_pos[0] + rel_x) % self.screen.get_width()
-            self.grid_pos[1] = (self.grid_pos[1] + rel_y) % self.screen.get_height()
+            if rel_x != 0 or rel_y != 0:
+                self.grid_pos[0] = (self.grid_pos[0] + rel_x) % self.screen.get_width()
+                self.grid_pos[1] = (self.grid_pos[1] + rel_y) % self.screen.get_height()
             return self.grid_pos, is_aim_mode
         else:
             if x is not None and y is not None:

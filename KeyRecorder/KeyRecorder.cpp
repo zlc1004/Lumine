@@ -191,9 +191,22 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSEMOVE: {
             CheckCursorState(timestamp);
             MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
+            int x = pMouseStruct->pt.x;
+            int y = pMouseStruct->pt.y;
+            
+            bool isLocked = !g_cursorVisible || g_isClipped;
+            
             std::lock_guard<std::mutex> lock(g_mutex);
             if (g_logFile.is_open()) {
-                g_logFile << timestamp << ",MOUSE_ABS," << pMouseStruct->pt.x << "," << pMouseStruct->pt.y << "\n";
+                if (isLocked) {
+                    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+                    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+                    int centerX = screenWidth / 2;
+                    int centerY = screenHeight / 2;
+                    g_logFile << timestamp << ",MOUSE_REL," << (centerX - x) << "," << (centerY - y) << "\n";
+                } else {
+                    g_logFile << timestamp << ",MOUSE_ABS," << x << "," << y << "\n";
+                }
             }
             break;
         }
@@ -271,6 +284,15 @@ void PollRelativeMouse() {
 
     while (g_running) {
         if (g_mouseDevice) {
+            hr = g_mouseDevice->Poll();
+            if (FAILED(hr)) {
+                hr = g_mouseDevice->Acquire();
+                if (FAILED(hr)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+            }
+            
             dwElements = 64;
             hr = g_mouseDevice->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), mouseData, &dwElements, 0);
             
@@ -287,7 +309,6 @@ void PollRelativeMouse() {
                         relY += mouseData[i].dwData;
                         break;
                     case DIMOFS_Z:
-                        // Mouse wheel (relative)
                         std::lock_guard<std::mutex> lock(g_mutex);
                         if (g_logFile.is_open()) {
                             g_logFile << timestamp << ",MOUSE_REL,WHEEL," << mouseData[i].dwData << "\n";
@@ -304,7 +325,7 @@ void PollRelativeMouse() {
                 }
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(5)); // 200Hz polling
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 }
 
