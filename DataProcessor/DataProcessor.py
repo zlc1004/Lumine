@@ -278,6 +278,27 @@ class VideoProcessor:
         frame_interval = 10000000 // self.fps
         return frame_idx * frame_interval
 
+    def get_video_info(self) -> Tuple[int, int]:
+        """Get video start and end timestamps in 100ns units (start always 0, duration calculated)"""
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            self.video_path,
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            duration_sec = float(result.stdout.strip())
+            duration_100ns = int(duration_sec * 10000000)
+            return 0, duration_100ns
+        except (FileNotFoundError, ValueError):
+            return 0, 0
+
 
 class LumineDataset:
     """Create Lumine-compatible dataset"""
@@ -460,31 +481,70 @@ def main():
                 print(f"Warning: No frames extracted for {log_file.stem}")
                 continue
 
+            # Get video info for synchronization
+            video_proc = VideoProcessor(
+                str(video_file),
+                str(output_dir / "frames"),
+                fps=args.fps,
+                width=args.width,
+                height=args.height,
+            )
+            video_start, video_end = video_proc.get_video_info()
+
+            # Get key timestamps
+            key_start = parser_obj.start_timestamp + args.timestamp_offset
+            all_events = parser_obj.key_events + parser_obj.mouse_events
+            last_event_ts = max((e.timestamp for e in all_events), default=key_start)
+            key_end = last_event_ts + args.timestamp_offset
+
+            # Calculate overlap range
+            overlap_start = max(video_start, key_start)
+            overlap_end = min(video_end, key_end)
+
+            if overlap_start >= overlap_end:
+                print(f"Warning: No overlapping time range for {log_file.stem}")
+                print(
+                    f"  Video: {video_start} - {video_end}, Keys: {key_start} - {key_end}"
+                )
+                continue
+
+            print(
+                f"Timestamp sync: Video [{video_start}, {video_end}], Keys [{key_start}, {key_end}]"
+            )
+            print(f"Overlap range: [{overlap_start}, {overlap_end}]")
+
             # Generate action labels
             print("\n[3/4] Generating action labels...")
             dataset = LumineDataset(str(output_dir))
 
-            # Apply timestamp offset if provided
-            base_timestamp = parser_obj.start_timestamp + args.timestamp_offset
+            frame_duration = 10000000 // args.fps
 
+            valid_frame_count = 0
             for j, frame in enumerate(frames):
-                # Get actions for this frame (200ms window)
-                frame_time = base_timestamp + (j * (10000000 // args.fps))
+                frame_time = j * frame_duration
+
+                if frame_time < overlap_start or frame_time >= overlap_end:
+                    continue
 
                 action_frame = parser_obj.get_actions_at_time(
                     frame_time, duration_ms=200
                 )
                 action_str = action_frame.to_lumine_format()
 
-                dataset.add_sample(frame_idx=j, frame_path=frame, action=action_str)
+                dataset.add_sample(
+                    frame_idx=valid_frame_count, frame_path=frame, action=action_str
+                )
                 all_samples.append(
                     {
                         "source": log_file.stem,
-                        "frame_idx": j,
+                        "frame_idx": valid_frame_count,
                         "image": frame.name,
                         "action": action_str,
                     }
                 )
+                valid_frame_count += 1
+
+            print(f"Generated {valid_frame_count} samples (within overlap)")
 
             # Save dataset
             print("\n[4/4] Saving dataset...")
@@ -617,21 +677,58 @@ def _process_single(log_file: str, video_file: str, output_dir: str, args):
         print("Error: No frames extracted")
         return
 
+    # Get video info for synchronization
+    video_proc = VideoProcessor(
+        video_file,
+        os.path.join(output_dir, "frames"),
+        fps=args.fps,
+        width=args.width,
+        height=args.height,
+    )
+    video_start, video_end = video_proc.get_video_info()
+
+    # Get key timestamps
+    key_start = parser_obj.start_timestamp + args.timestamp_offset
+    all_events = parser_obj.key_events + parser_obj.mouse_events
+    last_event_ts = max((e.timestamp for e in all_events), default=key_start)
+    key_end = last_event_ts + args.timestamp_offset
+
+    # Calculate overlap range
+    overlap_start = max(video_start, key_start)
+    overlap_end = min(video_end, key_end)
+
+    if overlap_start >= overlap_end:
+        print(f"Warning: No overlapping time range")
+        print(f"  Video: {video_start} - {video_end}, Keys: {key_start} - {key_end}")
+        return
+
+    print(
+        f"Timestamp sync: Video [{video_start}, {video_end}], Keys [{key_start}, {key_end}]"
+    )
+    print(f"Overlap range: [{overlap_start}, {overlap_end}]")
+
     # Generate action labels
     print("\n[3/4] Generating action labels...")
     dataset = LumineDataset(output_dir)
 
-    # Apply timestamp offset if provided
-    base_timestamp = parser_obj.start_timestamp + args.timestamp_offset
+    frame_duration = 10000000 // args.fps
+    valid_frame_count = 0
 
     for i, frame in enumerate(frames):
-        # Get actions for this frame (200ms window)
-        frame_time = base_timestamp + (i * (10000000 // args.fps))
+        frame_time = i * frame_duration
+
+        if frame_time < overlap_start or frame_time >= overlap_end:
+            continue
 
         action_frame = parser_obj.get_actions_at_time(frame_time, duration_ms=200)
         action_str = action_frame.to_lumine_format()
 
-        dataset.add_sample(frame_idx=i, frame_path=frame, action=action_str)
+        dataset.add_sample(
+            frame_idx=valid_frame_count, frame_path=frame, action=action_str
+        )
+        valid_frame_count += 1
+
+    print(f"Generated {valid_frame_count} samples (within overlap)")
 
     # Save dataset
     print("\n[4/4] Saving dataset...")
