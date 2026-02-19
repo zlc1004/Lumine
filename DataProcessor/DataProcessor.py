@@ -16,6 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 import shutil
+from tqdm import tqdm
 
 
 @dataclass
@@ -233,7 +234,27 @@ class VideoProcessor:
         return frames
 
     def get_video_info(self) -> Tuple[int, int]:
-        """Get video duration in 100ns units"""
+        """Get video start and end timestamps in 100ns units"""
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=start_time",
+            "-of",
+            "csv=p=0",
+            self.video_path,
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            start_sec = float(result.stdout.strip())
+            start_100ns = int(start_sec * 10000000)
+        except (FileNotFoundError, ValueError):
+            start_100ns = 0
+
         cmd = [
             "ffprobe",
             "-v",
@@ -249,9 +270,11 @@ class VideoProcessor:
             result = subprocess.run(cmd, capture_output=True, text=True)
             duration_sec = float(result.stdout.strip())
             duration_100ns = int(duration_sec * 10000000)
-            return 0, duration_100ns
+            end_100ns = start_100ns + duration_100ns
         except (FileNotFoundError, ValueError):
-            return 0, 0
+            end_100ns = 0
+
+        return start_100ns, end_100ns
 
 
 class LumineDataset:
@@ -326,7 +349,9 @@ def main():
         log_files = sorted(log_path.glob("*.txt"))
         video_files = [video_path / f"{f.stem}.mkv" for f in log_files]
 
-    for log_f, video_f in zip(log_files, video_files):
+    for log_f, video_f in tqdm(
+        zip(log_files, video_files), total=len(log_files), desc="Processing pairs"
+    ):
         if not video_f.exists():
             continue
 
@@ -353,33 +378,61 @@ def main():
             continue
 
         video_start, video_end = video_proc.get_video_info()
+        video_start = video_start if video_start else 0
 
-        # Sync: log starts at parser_obj.start_timestamp
-        # Video starts at 0 (relative to its own clock)
-        # We need to find the absolute time of the first frame.
-        # Assuming the log start and video start are aligned (or using manual offset)
+        # Convert video PTS to absolute FILETIME using file creation time
+        video_ctime = os.path.getctime(str(video_f))
+        video_ctime_filetime = int(video_ctime * 10000000) + 116444736000000000
+        # Video absolute start = file creation time + video PTS offset
+        video_abs_start = video_ctime_filetime + video_start
+
+        # Key recorder time range
+        key_start = parser_obj.start_timestamp if parser_obj.start_timestamp else 0
+        key_end = (
+            parser_obj.key_chunks[-1].timestamp if parser_obj.key_chunks else key_start
+        )
+
+        # Calculate video absolute end time
+        frame_interval_100ns = 10000000 // args.fps
+        video_frames_count = len(frames)
+        video_abs_end = video_abs_start + (video_frames_count * frame_interval_100ns)
+
+        # Find overlap between video and key timestamps
+        overlap_start = max(video_abs_start, key_start)
+        overlap_end = min(video_abs_end, key_end)
+
+        print(
+            f"Video: [{video_abs_start}, {video_abs_end}] ({video_abs_start / 10000000:.2f}s - {video_abs_end / 10000000:.2f}s Unix)"
+        )
+        print(
+            f"Keys: [{key_start}, {key_end}] ({key_start / 10000000:.2f}s - {key_end / 10000000:.2f}s Unix)"
+        )
+        print(f"Overlap: [{overlap_start}, {overlap_end}]")
+
+        if overlap_start >= overlap_end:
+            print("Warning: No overlapping time range")
+            continue
 
         dataset = LumineDataset(str(output_dir))
 
-        frame_interval_100ns = 10000000 // args.fps
+        valid_count = 0
+        for i, frame in enumerate(tqdm(frames, desc="Processing frames")):
+            # Frame absolute time = video absolute start + frame offset
+            frame_time = video_abs_start + (i * frame_interval_100ns)
 
-        for i, frame in enumerate(frames):
-            # Frame time relative to video start
-            frame_time_rel = i * frame_interval_100ns
+            # Skip frames outside overlap range
+            if frame_time < overlap_start or frame_time >= overlap_end:
+                continue
 
-            # Map to log time
-            # For now, assume log start is video start, plus optional manual offset
-            log_time = parser_obj.start_timestamp + frame_time_rel + args.offset
-
-            if log_time > (
-                parser_obj.key_chunks[-1].timestamp if parser_obj.key_chunks else 0
-            ):
-                break
-
-            action_frame = parser_obj.get_actions_at_time(log_time, duration_ms=200)
+            action_frame = parser_obj.get_actions_at_time(frame_time, duration_ms=200)
             dataset.add_sample(
-                frame_idx=i, frame_path=frame, action=action_frame.to_lumine_format()
+                frame_idx=valid_count,
+                frame_path=frame,
+                action=action_frame.to_lumine_format(),
             )
+            valid_count += 1
+
+        print(f"Valid frames: {valid_count}/{len(frames)}")
 
         dataset.save()
         print(f"Done: {log_f.stem}")
