@@ -13,3 +13,4 @@ models
 data
 tmp
 output
+log.txt
