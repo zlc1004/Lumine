@@ -1,0 +1,1 @@
+pv -s $(du -sb data.tar.gz | awk '{print $1}') data.tar.gz | sha256sum
