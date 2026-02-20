@@ -1,6 +1,6 @@
 git clone https://github.com/zlc1004/VeOmni.git
 apt update
-apt install -y ffmpeg rsync pv
+apt install -y ffmpeg rsync pv lftp pigz
 curl -LsSf https://astral.sh/uv/install.sh | sh
 curl -LsSf https://hf.co/cli/install.sh | bash
 source $HOME/.local/bin/env
