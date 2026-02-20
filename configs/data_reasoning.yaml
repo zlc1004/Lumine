@@ -5,3 +5,6 @@ sources:
 names:
   - lumine_reasoning
 preprocessor: lumine_reasoning
+schedule:
+  - schedule_type: const
+    weights: [1.0]

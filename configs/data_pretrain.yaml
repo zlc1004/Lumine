@@ -1,7 +1,10 @@
 # Lumine Pre-training Data Config
 
 sources:
-  - lumine_pretrain
+  - /workspace/Lumine/data/train_unix.jsonl
 names:
   - lumine_pretrain
 preprocessor: lumine_pretrain
+schedule:
+  - schedule_type: const
+    weights: [1.0]

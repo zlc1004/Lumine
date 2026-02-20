@@ -3,19 +3,21 @@
 # 4x A40 (192GB VRAM)
 
 model:
-  model_path: models/Qwen2-VL-7B-Base
-  attn_implementation: flash_attn
+  model_path: /workspace/Lumine/models/Qwen2-VL-7B-Base
+  attn_implementation: flash_attention_2
 
 data:
-  train_path: configs/data_pretrain.yaml
+  train_path: /workspace/Lumine/data/train_unix.jsonl
   chat_template: qwen2vl
-  max_seq_len: 8192
+  max_seq_len: 4096
   train_size: 10000000
   datasets_type: mapping
+  source_name: lumine_pretrain
+  num_workers: 4
   mm_configs:
-    image_max_pixels: 262144
-    video_max_pixels: 262144
-    max_frames: 8
+    image_max_pixels: 921600
+    video_max_pixels: 921600
+    max_frames: 4
     fps: 2.0
 
 train:
@@ -29,10 +31,11 @@ train:
   freeze_vit: false
   lr: 1.0e-5
   init_device: meta
+  enable_fsdp_offload: false
   lr_decay_style: cosine
   num_train_epochs: 3
   micro_batch_size: 1
-  global_batch_size: 32
+  global_batch_size: 128
   max_steps: 10000
   save_steps: 1000
   save_epochs: 1

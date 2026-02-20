@@ -4,7 +4,7 @@
 
 model:
   model_path: output/lumine_stage2_instruct/hf_ckpt
-  attn_implementation: flash_attn
+  attn_implementation: flash_attention_2
 
 data:
   train_path: configs/data_reasoning.yaml

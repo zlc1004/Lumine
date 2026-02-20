@@ -1,6 +1,6 @@
 #!/bin/bash
-# Lumine Training - 2x A40 (96GB VRAM)
-# Usage: ./train_a40.sh [stage]
+# Lumine Training - 1x B200 (180GB/192GB VRAM)
+# Usage: ./train_b200.sh [stage]
 
 set -e
 
@@ -14,17 +14,22 @@ if [ -d "$VEOMNI_DIR/.venv" ]; then
     source "$VEOMNI_DIR/.venv/bin/activate"
 fi
 
+# Optimization for memory fragmentation
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# Ensure tokenizer parallelism is safe
+export TOKENIZERS_PARALLELISM=false
+
 # Function to run a stage
 run_stage() {
     local stage=$1
     local config=$2
     echo "=========================================="
-    echo "Running Stage $stage"
+    echo "Running Stage $stage on B200"
     echo "Config: $config"
     echo "=========================================="
     
-    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-    torchrun --nproc_per_node=2 -m tasks.omni.train_qwen_vl "$config"
+    # We use torchrun with 1 process for single GPU, which still enables the distributed engine logic
+    torchrun --nproc_per_node=1 -m tasks.omni.train_qwen_vl "$config"
     
     if [ $? -eq 0 ]; then
         echo "Stage $stage completed successfully!"
@@ -38,7 +43,7 @@ run_stage() {
 STAGE=$1
 
 if [ -z "$STAGE" ] || [ "$STAGE" == "all" ]; then
-    echo "Running all 3 training stages on 4x A40..."
+    echo "Running all 3 training stages on 1x B200..."
     
     run_stage 1 "$SCRIPT_DIR/configs/stage1_pretrain.yaml"
     run_stage 2 "$SCRIPT_DIR/configs/stage2_instruct.yaml"
