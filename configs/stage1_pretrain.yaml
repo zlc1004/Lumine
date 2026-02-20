@@ -35,7 +35,7 @@ train:
   lr_decay_style: cosine
   num_train_epochs: 3
   micro_batch_size: 1
-  global_batch_size: 130
+  global_batch_size: 200
   max_steps: 10000
   save_steps: 1000
   save_epochs: 1
