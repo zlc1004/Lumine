@@ -3,7 +3,7 @@
 # 1. Update and install system dependencies
 echo "--- Installing System Dependencies ---"
 apt update
-apt install -y ffmpeg rsync pv lftp pigz build-essential
+apt install -y ffmpeg rsync pv lftp pigz build-essential iputils-ping
 
 # 2. Install uv (Fast Python package manager) and Hugging Face CLI
 echo "--- Installing uv and HF CLI ---"

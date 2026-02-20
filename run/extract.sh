@@ -6,3 +6,13 @@ if [ -f "hf_ckpt.tar.gz" ]; then
 else
     echo "!!! hf_ckpt.tar.gz not found in current directory !!!"
 fi
+
+if [ -f "model_assets.tar.gz" ]; then
+    echo "--- Extracting Checkpoint ---"
+    # Using pv to see progress and pigz for speed
+    tar -I pigz -xf model_assets.tar.gz
+else
+    echo "!!! model_assets.tar.gz not found in current directory !!!"
+fi
+
+cp ./model_assets/* hf_ckpt
