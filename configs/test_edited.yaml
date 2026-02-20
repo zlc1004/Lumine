@@ -11,6 +11,7 @@ data:
   train_size: 1000
   datasets_type: mapping
   source_name: lumine_pretrain
+  num_workers: 0
   mm_configs:
     image_max_pixels: 262144
     video_max_pixels: 262144
