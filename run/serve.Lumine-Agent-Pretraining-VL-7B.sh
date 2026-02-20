@@ -13,6 +13,5 @@ python3 -m vllm.entrypoints.openai.api_server \
     --model ./models/Lumine-Agent-Pretraining-VL-7B \
     --served-model-name lumine-agent-vl-7b \
     --dtype bfloat16 \
-    --gpu-memory-utilization 0.90 \
     --max-model-len 8192 \
     --port 8000

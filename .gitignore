@@ -15,3 +15,5 @@ tmp
 output
 log.txt
 hf_ckpt
+.claude
+assets
