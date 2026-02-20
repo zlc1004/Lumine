@@ -116,7 +116,10 @@ class DataEditor:
             # Update stage files
             with open(new_path / "stage1_pretrain.jsonl", "w", encoding="utf-8") as f:
                 for sample in new_samples:
-                    out = {"image": sample["image"], "text": sample["action"]}
+                    out = {
+                        "images": [f"frames/{sample['image']}"],
+                        "text": sample["action"],
+                    }
                     f.write(json.dumps(out, ensure_ascii=False) + "\n")
 
             messagebox.showinfo(

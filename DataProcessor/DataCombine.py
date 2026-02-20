@@ -50,8 +50,14 @@ def combine_dataset(input_dir: Path, output_dir: Path, add_prefix: bool = False)
             with open(stage1_file, "r", encoding="utf-8") as f:
                 for line in f:
                     sample = json.loads(line)
+                    # Convert to new format: {"images": ["frames/..."], "text": "..."}
+                    if "image" in sample:
+                        image_filename = sample.pop("image")
+                        sample["images"] = [f"frames/{image_filename}"]
                     if add_prefix:
-                        sample["image"] = f"{dataset_name}_{sample['image']}"
+                        sample["images"] = [
+                            f"{dataset_name}/{img}" for img in sample.get("images", [])
+                        ]
                     stage1_samples.append(sample)
 
         # Read stage2 instruct
@@ -60,8 +66,13 @@ def combine_dataset(input_dir: Path, output_dir: Path, add_prefix: bool = False)
             with open(stage2_file, "r", encoding="utf-8") as f:
                 for line in f:
                     sample = json.loads(line)
+                    if "image" in sample:
+                        image_filename = sample.pop("image")
+                        sample["images"] = [f"frames/{image_filename}"]
                     if add_prefix:
-                        sample["image"] = f"{dataset_name}_{sample['image']}"
+                        sample["images"] = [
+                            f"{dataset_name}/{img}" for img in sample.get("images", [])
+                        ]
                     stage2_samples.append(sample)
 
         # Read stage3 reasoning
@@ -70,8 +81,13 @@ def combine_dataset(input_dir: Path, output_dir: Path, add_prefix: bool = False)
             with open(stage3_file, "r", encoding="utf-8") as f:
                 for line in f:
                     sample = json.loads(line)
+                    if "image" in sample:
+                        image_filename = sample.pop("image")
+                        sample["images"] = [f"frames/{image_filename}"]
                     if add_prefix:
-                        sample["image"] = f"{dataset_name}_{sample['image']}"
+                        sample["images"] = [
+                            f"{dataset_name}/{img}" for img in sample.get("images", [])
+                        ]
                     stage3_samples.append(sample)
 
     # Write combined files
