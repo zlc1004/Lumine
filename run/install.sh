@@ -17,7 +17,7 @@ source $HOME/.local/bin/env
 # 4. Create a Virtual Environment and install Inference stack
 echo "--- Setting up Python Environment ---"
 uv venv
-source .venv/bin/env
+source .venv/bin/activate
 
 # Installing vLLM for the A40/H200 and other helpful libs
 uv pip install vllm transformers accelerate flash-attn --no-build-isolation
