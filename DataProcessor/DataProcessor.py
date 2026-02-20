@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import json
+import bisect
 from pathlib import Path
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -135,6 +136,10 @@ class KeyRecorderParser:
         self.key_chunks.sort(key=lambda x: x.timestamp)
         self.mouse_events.sort(key=lambda x: x.timestamp)
 
+        # Precompute timestamps for binary search
+        self.key_timestamps = [e.timestamp for e in self.key_chunks]
+        self.mouse_timestamps = [e.timestamp for e in self.mouse_events]
+
         print(
             f"Parsed {len(self.key_chunks)} key chunks, {len(self.mouse_events)} mouse events"
         )
@@ -144,38 +149,34 @@ class KeyRecorderParser:
         self, start_time: int, duration_ms: int = 200
     ) -> ActionFrame:
         """Get actions for a time window (default 200ms for 1 frame at 5fps)"""
-        end_time = start_time + (duration_ms * 10000)  # Convert ms to 100ns units
+        end_time = start_time + (duration_ms * 10000)
 
-        # Split into 6 chunks of 33.33ms each
-        chunks = []
         chunk_duration_100ns = int((duration_ms / 6) * 10000)
 
+        chunks = []
         for i in range(6):
             c_start = start_time + (i * chunk_duration_100ns)
             c_end = c_start + chunk_duration_100ns
 
-            # Get mouse events in this chunk
-            chunk_mouse = [
-                e for e in self.mouse_events if c_start <= e.timestamp < c_end
-            ]
+            # Binary search for mouse events in range
+            mouse_start_idx = bisect.bisect_left(self.mouse_timestamps, c_start)
+            mouse_end_idx = bisect.bisect_right(self.mouse_timestamps, c_end - 1)
 
-            dx = sum(e.dx for e in chunk_mouse if e.event_type == "REL")
-            dy = sum(e.dy for e in chunk_mouse if e.event_type == "REL")
-            scroll = sum(e.delta for e in chunk_mouse if e.event_type == "WHEEL")
+            dx = dy = scroll = 0
+            for j in range(mouse_start_idx, mouse_end_idx):
+                e = self.mouse_events[j]
+                if e.event_type == "REL":
+                    dx += e.dx
+                    dy += e.dy
+                elif e.event_type == "WHEEL":
+                    scroll += e.delta
 
-            # For KEY_CHUNK, we take the last one in the interval if any,
-            # or the one closest to the end of the interval
-            chunk_keys_events = [
-                e for e in self.key_chunks if c_start <= e.timestamp < c_end
-            ]
-
-            if chunk_keys_events:
-                # Use the latest state in this 33ms window
-                keys = chunk_keys_events[-1].keys
+            # Binary search for key events - find last key before c_end
+            key_idx = bisect.bisect_right(self.key_timestamps, c_end - 1)
+            if key_idx > 0:
+                keys = self.key_chunks[key_idx - 1].keys
             else:
-                # Find the most recent state before this window
-                past_events = [e for e in self.key_chunks if e.timestamp < c_start]
-                keys = past_events[-1].keys if past_events else []
+                keys = []
 
             chunks.append(ActionChunk(dx=dx, dy=dy, scroll=scroll, keys=keys))
 
@@ -203,18 +204,28 @@ class VideoProcessor:
         """Extract frames at specified fps and resolution"""
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Check if frames already exist
+        existing_frames = sorted(self.output_dir.glob("frame_*.png"))
+        if existing_frames:
+            print(f"Found {len(existing_frames)} existing frames, skipping extraction")
+            return existing_frames
+
         cmd = [
             "ffmpeg",
+            "-hwaccel",
+            "cuda",
+            "-hwaccel_output_format",
+            "cuda",
             "-i",
             self.video_path,
             "-vf",
-            f"fps={self.fps},scale={self.width}:{self.height}",
-            "-q:v",
-            "2",
+            f"fps=5,scale_cuda={self.width}:{self.height},hwdownload,format=nv12",
+            "-c:v",
+            "png",
             "-start_number",
             "0",
             "-y",
-            str(self.output_dir / "frame_%05d.jpg"),
+            str(self.output_dir / "frame_%05d.png"),
         ]
 
         print(f"Extracting frames: {' '.join(cmd)}")
@@ -228,7 +239,7 @@ class VideoProcessor:
             print("Error: ffmpeg not found.")
             return []
 
-        frames = sorted(self.output_dir.glob("frame_*.jpg"))
+        frames = sorted(self.output_dir.glob("frame_*.png"))
         print(f"Extracted {len(frames)} frames")
 
         return frames
@@ -372,7 +383,7 @@ def main():
         if not args.skip_video:
             frames = video_proc.extract_frames()
         else:
-            frames = sorted((output_dir / "frames").glob("frame_*.jpg"))
+            frames = sorted((output_dir / "frames").glob("frame_*.png"))
 
         if not frames:
             continue

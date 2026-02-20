@@ -109,7 +109,9 @@ def combine_dataset(input_dir: Path, output_dir: Path, add_prefix: bool = False)
             dataset_name = meta_file.parent.name
             src_frames = meta_file.parent / "frames"
             if src_frames.exists():
-                for frame in src_frames.glob("*.jpg"):
+                for frame in list(src_frames.glob("*.png")) + list(
+                    src_frames.glob("*.jpg")
+                ):
                     dst_name = (
                         f"{dataset_name}_{frame.name}" if add_prefix else frame.name
                     )
