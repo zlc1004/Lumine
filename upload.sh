@@ -28,4 +28,4 @@ echo "Key:    $ID_FILE"
 echo "----------------------------------------"
 
 # Execute rsync with the parsed info
-rsync -avzP -e "ssh -p $PORT -i $ID_FILE -o StrictHostKeyChecking=no" "$FILE_TO_UPLOAD" "$USER_HOST":"$REMOTE_DEST"
+rsync -avP -e "ssh -p $PORT -i $ID_FILE -o StrictHostKeyChecking=no -o IPQoS=throughput -c aes128-gcm@openssh.com" "$FILE_TO_UPLOAD" "$USER_HOST":"$REMOTE_DEST"
