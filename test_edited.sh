@@ -1,7 +1,7 @@
 #!/bin/bash
-# Test script for edited data
+# Test script for edited data using VeOmni's train.sh
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
 
 VEOMNI_DIR="$SCRIPT_DIR/VeOmni"
 
@@ -10,5 +10,8 @@ if [ -d "$VEOMNI_DIR/.venv" ]; then
     source "$VEOMNI_DIR/.venv/bin/activate"
 fi
 
-echo "Running test with edited data in input_log_20260218_113251_edited..."
-python -m tasks.omni.train_qwen_vl --config "$SCRIPT_DIR/configs/test_edited.yaml"
+echo "Running test with edited data..."
+
+# Run from the main Lumine directory so relative paths work
+cd "$SCRIPT_DIR"
+bash "$VEOMNI_DIR/train.sh" -m tasks.omni.train_qwen_vl "$SCRIPT_DIR/configs/test_edited.yaml"

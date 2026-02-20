@@ -16,4 +16,4 @@ echo "Running test with Qwen2-VL-2B..."
 echo "Config: configs/test_2b.yaml"
 echo ""
 
-python -m tasks.omni.train_qwen_vl --config "$SCRIPT_DIR/configs/test_2b.yaml"
+torchrun --nproc_per_node=1 -m tasks.omni.train_qwen_vl "$SCRIPT_DIR/configs/test_2b.yaml"

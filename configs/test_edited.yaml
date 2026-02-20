@@ -2,14 +2,15 @@
 
 model:
   model_path: models/Qwen2-VL-2B-Base
-  attn_implementation: flash_attn
+  attn_implementation: flash_attention_2
 
 data:
-  train_path: configs/data_edited.yaml
+  train_path: data/train_unix.jsonl
   chat_template: qwen2vl
   max_seq_len: 4096
-  train_size: 1000  # Small size for quick test
+  train_size: 1000
   datasets_type: mapping
+  source_name: lumine_pretrain
   mm_configs:
     image_max_pixels: 262144
     video_max_pixels: 262144
@@ -18,7 +19,7 @@ data:
 
 train:
   output_dir: output/test_edited
-  data_parallel_mode: fsdp2
+  data_parallel_mode: ddp
   wandb_project: lumine
   wandb_name: test_edited
   rmpad: false
@@ -26,7 +27,7 @@ train:
   ulysses_parallel_size: 1
   freeze_vit: false
   lr: 1.0e-5
-  init_device: meta
+  init_device: cuda
   lr_decay_style: cosine
   num_train_epochs: 1
   micro_batch_size: 1
@@ -36,5 +37,3 @@ train:
   save_epochs: 1
   save_hf_weights: true
   enable_gradient_checkpointing: true
-  enable_fsdp_offload: true
-  enable_activation_offload: true

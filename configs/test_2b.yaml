@@ -3,7 +3,7 @@
 
 model:
   model_path: models/Qwen2-VL-2B-Base
-  attn_implementation: flash_attn
+  attn_implementation: flash_attention_2
 
 data:
   train_path: configs/data_pretrain.yaml
@@ -27,7 +27,7 @@ train:
   ulysses_parallel_size: 1
   freeze_vit: false
   lr: 1.0e-5
-  init_device: meta
+  init_device: cuda
   lr_decay_style: cosine
   num_train_epochs: 1
   micro_batch_size: 1

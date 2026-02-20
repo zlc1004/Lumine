@@ -23,7 +23,7 @@ run_stage() {
     echo "Config: $config"
     echo "=========================================="
     
-    torchrun --nproc_per_node=4 -m tasks.omni.train_qwen_vl --config "$config"
+    torchrun --nproc_per_node=4 -m tasks.omni.train_qwen_vl "$config"
     
     if [ $? -eq 0 ]; then
         echo "Stage $stage completed successfully!"

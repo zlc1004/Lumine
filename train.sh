@@ -28,7 +28,7 @@ run_stage() {
     echo "Config: $config"
     echo "=========================================="
     
-    python -m tasks.omni.train_qwen_vl --config "$config"
+    python -m tasks.omni.train_qwen_vl "$config"
     
     if [ $? -eq 0 ]; then
         echo "Stage $stage completed successfully!"
