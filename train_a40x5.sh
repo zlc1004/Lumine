@@ -1,6 +1,6 @@
 #!/bin/bash
-# Lumine Training - 2x A40 (96GB VRAM)
-# Usage: ./train_a40.sh [stage]
+# Lumine Training - 5x A40 (240GB VRAM)
+# Usage: ./train_a40x5.sh [stage]
 
 set -e
 
@@ -24,7 +24,7 @@ run_stage() {
     echo "=========================================="
     
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-    torchrun --nproc_per_node=2 -m tasks.omni.train_qwen_vl "$config"
+    torchrun --nproc_per_node=5 -m tasks.omni.train_qwen_vl "$config"
     
     if [ $? -eq 0 ]; then
         echo "Stage $stage completed successfully!"
@@ -38,7 +38,7 @@ run_stage() {
 STAGE=$1
 
 if [ -z "$STAGE" ] || [ "$STAGE" == "all" ]; then
-    echo "Running all 3 training stages on 4x A40..."
+    echo "Running all 3 training stages on 5x A40..."
     
     run_stage 1 "$SCRIPT_DIR/configs/stage1_pretrain.yaml"
     run_stage 2 "$SCRIPT_DIR/configs/stage2_instruct.yaml"
