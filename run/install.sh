@@ -20,7 +20,15 @@ uv venv
 source .venv/bin/activate
 
 # Installing vLLM for the A40/H200 and other helpful libs
-uv pip install vllm transformers accelerate flash-attn --no-build-isolation
+# uv pip install torch vllm transformers accelerate --no-build-isolation
+# uv pip install vllm-flash-attn --no-build-isolation
+
+uv pip install vllm transformers accelerate --extra-index-url https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match --upgrade
+uv pip install vllm-flash-attn --no-build-isolation
+uv pip install --upgrade vllm torch transformers accelerate \
+    --extra-index-url https://download.pytorch.org/whl/cu124 \
+    --index-strategy unsafe-best-match
+python3 -c "import torch; import vllm; from torch.library import infer_schema; print('Environment Restored: Torch ' + torch.__version__)"
 
 echo "--- Setup Complete ---"
 echo "To activate environment, run: source .venv/bin/activate"
