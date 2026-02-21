@@ -1,31 +1,32 @@
-# Lumine Stage 1: Pre-training Config
-# Train on image-action pairs to learn action primitives
-# 4x A40 (192GB VRAM)
+# Lumine Stage 1: Blackwell-Optimized Pre-training
+# 2x B200 (384GB Total VRAM) - Estimated Time: ~1.5 - 2 Hours
 
 model:
   model_path: /workspace/Lumine/models/Qwen2-VL-7B-Base
   attn_implementation: flash_attention_2
 
 data:
-  train_path: /workspace/Lumine/data/train_unix.jsonl
+  train_path: ~/Lumine/genshinPlayData/data_pretrain.yaml
   chat_template: qwen2vl
-  max_seq_len: 4096
-  train_size: 10000000
+  # Increased to 16k to ensure 8 frames of 720p + text never truncate
+  max_seq_len: 16384 
+  train_size: 8000000
   datasets_type: mapping
   source_name: lumine_pretrain
-  num_workers: 4
+  num_workers: 8
   mm_configs:
-    image_max_pixels: 921600
-    video_max_pixels: 921600
-    max_frames: 4
+    image_max_pixels: 921600 # 720p (1280x720)
+    video_max_pixels: 921600 # 720p (1280x720)
+    max_frames: 8
     fps: 2.0
+    use_audio_in_video: false
 
 train:
-  output_dir: output/lumine_stage1_pretrain
+  output_dir: output/Lumine-Agent-Pretraining-VL-7B
   data_parallel_mode: fsdp2
   wandb_project: lumine
-  wandb_name: lumine_stage1_pretrain
-  rmpad: false
+  wandb_name: lumine_b200_720p_8frame
+  rmpad: true # Enabled for speed: skips padding tokens in 16k window
   rmpad_with_pos_ids: true
   ulysses_parallel_size: 1
   freeze_vit: false
@@ -33,11 +34,11 @@ train:
   init_device: meta
   enable_fsdp_offload: false
   lr_decay_style: cosine
-  num_train_epochs: 3
-  micro_batch_size: 1
-  global_batch_size: 200
+  num_train_epochs: 2
+  micro_batch_size: 2 # B200 can handle MBZ 2-4 even with 16k seq and no checkpointing
+  global_batch_size: 32 # Balanced for 2-8 GPUs
   max_steps: 10000
   save_steps: 1000
-  save_epochs: 1
   save_hf_weights: true
-  enable_gradient_checkpointing: true
+  # Performance Killers: OFF
+  enable_gradient_checkpointing: false

@@ -1,9 +1,0 @@
-# Lumine Edited Data Config
-sources:
-  - input_log_20260218_113251_edited/train.jsonl
-names:
-  - lumine_pretrain
-preprocessor: lumine_pretrain
-schedule:
-  - schedule_type: const
-    weights: [1.0]
