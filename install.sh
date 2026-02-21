@@ -4,8 +4,6 @@ apt install -y ffmpeg rsync pv lftp pigz iputils-ping
 curl -LsSf https://astral.sh/uv/install.sh | sh
 curl -LsSf https://hf.co/cli/install.sh | bash
 source $HOME/.local/bin/env
-/root/.local/bin/hf download Qwen/Qwen2-VL-7B --local-dir ./models/Qwen2-VL-7B-Base
-/root/.local/bin/hf download --repo-type dataset koboshchan/genshinPlayData --local-dir ./genshinPlayData
 cd VeOmni
 uv self update 0.9.8
 uv sync --locked --extra gpu --extra video --extra dit
