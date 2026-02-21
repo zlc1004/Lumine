@@ -7,4 +7,4 @@ source $HOME/.local/bin/env
 cd VeOmni
 uv self update 0.9.8
 uv sync --locked --extra gpu --extra video --extra dit
-uv pip install accelerate
+uv pip install accelerate autoawq
