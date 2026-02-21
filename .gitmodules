@@ -1,0 +1,3 @@
+[submodule "VeOmni"]
+	path = VeOmni
+	url = https://github.com/zlc1004/VeOmni.git
