@@ -1,10 +1,8 @@
 #!/bin/bash
-# Lumine Training Script - Run all 3 stages sequentially
-# Usage: ./train.sh [stage]
-#   ./train.sh        - Run all stages
-#   ./train.sh 1      - Run only stage 1
-#   ./train.sh 2      - Run only stage 2
-#   ./train.sh 3      - Run only stage 3
+# Lumine Training Script - Run stages sequentially with configurable GPUs
+# Usage: ./train.sh [stage] [--gpu <number>]
+#   ./train.sh all --gpu 2    - Run all stages on 2 GPUs
+#   ./train.sh 1 --gpu 1      - Run only stage 1 on 1 GPU
 
 set -e
 
@@ -19,16 +17,39 @@ if [ -d "$VEOMNI_DIR/.venv" ]; then
     source "$VEOMNI_DIR/.venv/bin/activate"
 fi
 
+# Default values
+STAGE="all"
+GPU_COUNT=1
+
+# Simple argument parsing
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    1|2|3|all)
+      STAGE="$1"
+      shift
+      ;;
+    --gpu)
+      GPU_COUNT="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
 # Function to run a stage
 run_stage() {
     local stage=$1
     local config=$2
     echo "=========================================="
-    echo "Running Stage $stage"
+    echo "Running Stage $stage on $GPU_COUNT GPU(s)"
     echo "Config: $config"
     echo "=========================================="
     
-    python -m tasks.omni.train_qwen_vl "$config"
+    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    torchrun --nproc_per_node="$GPU_COUNT" -m tasks.omni.train_qwen_vl "$config"
     
     if [ $? -eq 0 ]; then
         echo "Stage $stage completed successfully!"
@@ -38,45 +59,18 @@ run_stage() {
     fi
 }
 
-# Parse arguments
-STAGE=$1
-
-if [ -z "$STAGE" ] || [ "$STAGE" == "all" ]; then
-    # Run all stages
+if [ "$STAGE" == "all" ]; then
     echo "Running all 3 training stages..."
-    
-    echo ""
-    echo ">>> STAGE 1: Pre-training (image-action pairs)"
     run_stage 1 "$SCRIPT_DIR/configs/stage1_pretrain.yaml"
-    
-    echo ""
-    echo ">>> STAGE 2: Instruction-following"
     run_stage 2 "$SCRIPT_DIR/configs/stage2_instruct.yaml"
-    
-    echo ""
-    echo ">>> STAGE 3: Reasoning"
     run_stage 3 "$SCRIPT_DIR/configs/stage3_reasoning.yaml"
-    
-    echo ""
     echo "=========================================="
     echo "All training stages completed!"
-    echo "Final model: output/lumine_stage3_reasoning/hf_ckpt"
     echo "=========================================="
-    
 elif [ "$STAGE" == "1" ]; then
     run_stage 1 "$SCRIPT_DIR/configs/stage1_pretrain.yaml"
-    
 elif [ "$STAGE" == "2" ]; then
     run_stage 2 "$SCRIPT_DIR/configs/stage2_instruct.yaml"
-    
 elif [ "$STAGE" == "3" ]; then
     run_stage 3 "$SCRIPT_DIR/configs/stage3_reasoning.yaml"
-    
-else
-    echo "Usage: $0 [stage]"
-    echo "  (empty or 'all') - Run all stages"
-    echo "  1 - Run only stage 1 (pre-training)"
-    echo "  2 - Run only stage 2 (instruction-following)"
-    echo "  3 - Run only stage 3 (reasoning)"
-    exit 1
 fi
