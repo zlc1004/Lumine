@@ -2,11 +2,8 @@
 """
 Compress BF16 model to INT4 and INT8 using bitsandbytes.
 
-Dependencies (available in VeOmni venv):
-    cd VeOmni && uv sync --extra dit
-
 Usage:
-    python compresser/quantize.py /path/to/model
+    python quantize.py /path/to/model
 """
 
 import argparse
