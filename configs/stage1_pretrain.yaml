@@ -6,7 +6,7 @@ model:
   attn_implementation: flash_attention_2
 
 data:
-  train_path: ~/Lumine/genshinPlayData/data_pretrain.yaml
+  train_path: configs/data_pretrain.yaml
   chat_template: qwen2vl
   # Increased to 16k to ensure 8 frames of 720p + text never truncate
   max_seq_len: 16384 

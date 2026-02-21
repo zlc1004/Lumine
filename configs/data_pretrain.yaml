@@ -1,7 +1,7 @@
 # Lumine Pre-training Data Config
 
 sources:
-  - /workspace/Lumine/data/train_unix.jsonl
+  - genshinPlayData/veomni_pretrain.jsonl
 names:
   - lumine_pretrain
 preprocessor: lumine_pretrain
