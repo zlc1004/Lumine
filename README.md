@@ -1,5 +1,7 @@
 # Lumine
 
+Attempted implementation of Lumine-Agent by arXiv:2511.08892.
+
 ```
 @misc{tan2025lumineopenrecipebuilding,
       title={Lumine: An Open Recipe for Building Generalist Agents in 3D Open Worlds}, 
