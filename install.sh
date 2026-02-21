@@ -8,4 +8,4 @@ source $HOME/.local/bin/env
 /root/.local/bin/hf download --repo-type dataset koboshchan/genshinPlayData --local-dir ./genshinPlayData
 cd VeOmni
 uv self update 0.9.8
-uv sync --locked  --extra gpu --extra video
+uv sync --locked --extra gpu --extra video --extra dit
