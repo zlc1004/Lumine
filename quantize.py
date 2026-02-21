@@ -9,7 +9,7 @@ Usage:
 import argparse
 import os
 import torch
-from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoModelForVision2Seq, BitsAndBytesConfig
 
 
 def load_model(model_path, load_in_4bit=False, load_in_8bit=False):
@@ -24,11 +24,11 @@ def load_model(model_path, load_in_4bit=False, load_in_8bit=False):
     elif load_in_8bit:
         quant_config = BitsAndBytesConfig(load_in_8bit=True)
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModelForVision2Seq.from_pretrained(
         model_path,
         quantization_config=quant_config,
         device_map="auto",
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     return model
 
