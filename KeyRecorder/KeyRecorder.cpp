@@ -181,8 +181,7 @@ void ProcessRawInput(int64_t timestamp) {
 
     if (moved) {
         if (g_isClipped) {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            g_logFile << timestamp << ",MOUSE_REL," << totalDx << "," << totalDy << "\n";
+            // pass
         } else {
             POINT p;
             GetCursorPos(&p);
@@ -191,6 +190,8 @@ void ProcessRawInput(int64_t timestamp) {
             std::lock_guard<std::mutex> lock(g_mutex);
             g_logFile << timestamp << ",MOUSE_ABS," << g_lastMouseX << "," << g_lastMouseY << "\n";
         }
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_logFile << timestamp << ",MOUSE_REL," << totalDx << "," << totalDy << "\n";
     }
 }
 
