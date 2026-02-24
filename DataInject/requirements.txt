@@ -1,0 +1,6 @@
+lxml
+aiohttp
+mwparserfromhell
+tqdm
+webdataset
+lxml-html-clean
