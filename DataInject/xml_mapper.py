@@ -55,14 +55,61 @@ def parse_xml_mapping(xml_path, output_json):
                 text_elem = revision.find("mw:text", ns_map)
                 if text_elem is not None and text_elem.text:
                     content = text_elem.text
-                    # Match |image = filename.png
-                    # Handles various spacing and line endings
-                    match = re.search(r"\|\s*image\s*=\s*([^|\n}]+)", content)
-                    if match:
-                        img_val = match.group(1).strip()
-                        if img_val:
-                            item_to_image[title] = img_val
-                            mapping_count += 1
+                    # Try to find icon or image
+                    img_val = None
+                    # We check for icon first as it's usually the inventory icon we want
+                    for param in ["icon", "image"]:
+                        # This regex captures the value on the same line.
+                        # We also try to handle cases where it might be on the next line if it's a gallery.
+                        match = re.search(
+                            rf"\|\s*{param}\s*=\s*([^|\n}}]+)", content, re.IGNORECASE
+                        )
+                        if not match:
+                            # Fallback for gallery on next line
+                            match = re.search(
+                                rf"\|\s*{param}\s*=\s*[\s\n]+(<gallery[\s\S]*?<\/gallery>)",
+                                content,
+                                re.IGNORECASE,
+                            )
+
+                        if match:
+                            val = match.group(1).strip()
+                            # Strip comments
+                            val = re.sub(r"<!--[\s\S]*?-->", "", val).strip()
+                            if not val:
+                                continue
+
+                            if "<gallery" in val.lower():
+                                # Handle gallery blocks - extract the first image filename
+                                # We search in the captured value first, then fallback to larger context
+                                g_match = re.search(
+                                    r"<gallery[^>]*>[\s\n]*(?:File:)?([^|\n<]+)",
+                                    val,
+                                    re.IGNORECASE,
+                                )
+                                if not g_match:
+                                    # Try searching in the context of the whole page starting from match
+                                    g_match = re.search(
+                                        r"<gallery[^>]*>[\s\n]*(?:File:)?([^|\n<]+)",
+                                        content[match.start() :],
+                                        re.IGNORECASE,
+                                    )
+
+                                if g_match:
+                                    img_val = g_match.group(1).strip()
+                                    break
+                            else:
+                                img_val = val
+                                break
+
+                    if img_val:
+                        # Final cleanup for the extracted filename
+                        # Strip any remaining tags or weirdness
+                        img_val = re.sub(
+                            r"</?gallery[^>]*>", "", img_val, flags=re.IGNORECASE
+                        ).strip()
+                        item_to_image[title] = img_val
+                        mapping_count += 1
 
         # Memory management
         elem.clear()
@@ -77,8 +124,8 @@ def parse_xml_mapping(xml_path, output_json):
     resolved_mapping = {}
     for item, img in item_to_image.items():
         # Clean up image name (sometimes users include "File:" prefix in templates)
-        if img.startswith("File:"):
-            img = img[5:]
+        if img.lower().startswith("file:"):
+            img = img[5:].strip()
 
         # Follow redirect if it exists
         final_img = file_redirects.get(img, img)
