@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compress BF16 Qwen2-VL model to 4-bit AWQ using llm-compressor.
+Compress BF16 Qwen2-VL model to 4-bit using llm-compressor.
 Calibrated using genshinPlayData.
 
 Usage:
@@ -10,84 +10,60 @@ Usage:
 import argparse
 import os
 import json
-import torch
-from llmcompressor.transformers import oneshot
-from llmcompressor.modifiers.quantization import GPTQModifier
+from llmcompressor import oneshot
+from llmcompressor.modifiers.quantization import QuantizationModifier
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from datasets import Dataset
-
-
-def load_calibration_data(data_path, num_samples=128):
-    print(f"Loading calibration data from {data_path}...")
-    samples = []
-    with open(data_path, "r", encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i >= num_samples:
-                break
-            data = json.loads(line)
-            # For Lumine/Genshin data, we'll use the 'action' field or fall back to the whole string
-            text = data.get("action", "") or data.get("text", "") or str(data)
-            samples.append({"text": text})
-    return Dataset.from_list(samples)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Quantize Qwen2-VL to 4-bit AWQ using llm-compressor"
+        description="Quantize Qwen2-VL to 4-bit using llm-compressor"
     )
     parser.add_argument("model_dir", type=str, help="Path to the BF16 model directory")
     parser.add_argument(
-        "--data",
+        "--scheme",
         type=str,
-        default="./genshinPlayData/metadata.jsonl",
-        help="Path to calibration data",
-    )
-    parser.add_argument(
-        "--num-samples",
-        type=int,
-        default=128,
-        help="Number of calibration samples (default: 128)",
+        default="W4A16",
+        help="Quantization scheme (default: W4A16)",
     )
     args = parser.parse_args()
 
     model_path = args.model_dir.rstrip("/")
-    output_path = f"{model_path}-AWQ"
+    output_path = f"{model_path}-{args.scheme}"
 
     # Load model and tokenizer
     print(f"Loading model: {model_path}")
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
         device_map="auto",
-        torch_dtype=torch.bfloat16,
+        torch_dtype="auto",
         trust_remote_code=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-    # Load calibration data
-    print("Loading calibration data...")
-    calibration_dataset = load_calibration_data(args.data, args.num_samples)
-
-    # Configure GPTQ quantization (AWQ-style)
-    recipe = GPTQModifier(
+    # Configure quantization recipe
+    # W4A16 = 4-bit weights, 16-bit activations using RTN (Round-to-Nearest)
+    recipe = QuantizationModifier(
         targets="Linear",
-        scheme="W4A16",  # 4-bit weights, 16-bit activations
+        scheme=args.scheme,
         ignore=["lm_head"],  # Don't quantize the language model head
     )
 
-    # Quantize
-    print("Starting quantization (this may take a while)...")
-    oneshot(
-        model=model,
-        dataset=calibration_dataset,
-        recipe=recipe,
-        max_seq_length=2048,
-        num_calibration_samples=args.num_samples,
-    )
+    # Apply quantization using oneshot
+    print(f"Starting {args.scheme} quantization (this may take a while)...")
+    oneshot(model=model, recipe=recipe)
 
-    # Save
+    # Test generation
+    print("========== SAMPLE GENERATION ==============")
+    input_ids = tokenizer("Hello, I am", return_tensors="pt").input_ids.to(model.device)
+    output = model.generate(input_ids, max_new_tokens=20)
+    print(tokenizer.decode(output[0]))
+    print("==========================================")
+
+    # Save to disk in compressed-tensors format
     print(f"Saving quantized model to: {output_path}")
     os.makedirs(output_path, exist_ok=True)
-    model.save_pretrained(output_path, save_compressed=True)
+    model.save_pretrained(output_path)
     tokenizer.save_pretrained(output_path)
 
     # Copy auxiliary files (README, preprocessors, etc.)
