@@ -1,0 +1,56 @@
+# VeOmni Configuration: Stage 0 - Knowledge Injection
+# Optimized for 2x NVIDIA B200 (384GB Total VRAM)
+
+model:
+  name: "Qwen/Qwen2-VL-7B-Instruct"
+  type: "causal_vlm"
+  precision: "bf16"
+  freeze_vision_tower: false  # Allow vision tower to learn Genshin-specific textures
+  gradient_checkpointing: true
+
+training:
+  stage: "knowledge_injection"
+  epochs: 3
+  micro_batch_size: 4  # Per GPU (B200 handles large activations, but VLMs are heavy)
+  gradient_accumulation_steps: 4
+  learning_rate: 2e-5
+  lr_scheduler: "cosine"
+  warmup_steps: 100
+  weight_decay: 0.05
+  max_seq_length: 4096  # Support long Wiki articles and high-res images
+
+parallelism:
+  strategy: "fsdp"
+  fsdp_config:
+    sharding_strategy: "FULL_SHARD"
+    backward_prefetch: "BACKWARD_PRE"
+    forward_prefetch: true
+    limit_all_gathers: true
+    cpu_offload: false  # Not needed for 7B on 384GB VRAM
+    mixed_precision:
+      param_dtype: "bf16"
+      reduce_dtype: "bf16"
+      buffer_dtype: "bf16"
+
+dataset:
+  format: "webdataset"
+  train_path: "DataInject/wds_shards/shard-{000000..999999}.tar"
+  validation_path: null
+  num_workers: 8
+  preprocessing:
+    image_size: 1120  # Qwen2-VL high-res support
+    min_pixels: 3136
+    max_pixels: 1254400
+
+# Stage 0 focuses on Wiki Lore and Visual Grounding
+# Thought and Action tokens are reserved for Stages 2-4
+tokens:
+  add_thought_tokens: false
+  add_action_tokens: false
+
+logging:
+  project: "Genshin-VLA"
+  run_name: "stage0-knowledge-injection-b200"
+  log_steps: 10
+  save_steps: 500
+  output_dir: "./checkpoints/stage0_knowledge"
