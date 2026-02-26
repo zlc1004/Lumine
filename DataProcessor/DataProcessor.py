@@ -318,7 +318,11 @@ class LumineDataset:
         """Save dataset metadata"""
         with open(self.output_dir / "metadata.jsonl", "w", encoding="utf-8") as f:
             for sample in self.samples:
-                f.write(json.dumps(sample, ensure_ascii=False) + "\n")
+                metadata_entry = {
+                    "file_name": sample["image"],
+                    "text": sample["action"],
+                }
+                f.write(json.dumps(metadata_entry, ensure_ascii=False) + "\n")
 
         # Stage 1: Pretrain (image -> action)
         with open(
