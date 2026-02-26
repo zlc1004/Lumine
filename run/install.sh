@@ -6,7 +6,7 @@ apt update
 apt install -y ffmpeg rsync pv lftp pigz build-essential iputils-ping
 
 # AWS only
-apt install python3.10-venv
+apt install -y python3.10-venv
 
 # 2. Install uv (Fast Python package manager) and Hugging Face CLI
 echo "--- Installing uv and HF CLI ---"
