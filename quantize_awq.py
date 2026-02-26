@@ -12,7 +12,7 @@ import os
 import json
 from llmcompressor import oneshot
 from llmcompressor.modifiers.quantization import QuantizationModifier
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModel, AutoConfig
 
 
 def main():
@@ -33,7 +33,12 @@ def main():
 
     # Load model and tokenizer
     print(f"Loading model: {model_path}")
-    model = AutoModelForCausalLM.from_pretrained(
+
+    # Load config to check model type
+    config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+    # Use AutoModel to automatically detect the correct model class
+    model = AutoModel.from_pretrained(
         model_path,
         device_map="auto",
         torch_dtype="auto",
@@ -53,11 +58,16 @@ def main():
     print(f"Starting {args.scheme} quantization (this may take a while)...")
     oneshot(model=model, recipe=recipe)
 
-    # Test generation
+    # Test generation (skip for VL models that need image inputs)
     print("========== SAMPLE GENERATION ==============")
-    input_ids = tokenizer("Hello, I am", return_tensors="pt").input_ids.to(model.device)
-    output = model.generate(input_ids, max_new_tokens=20)
-    print(tokenizer.decode(output[0]))
+    try:
+        input_ids = tokenizer("Hello, I am", return_tensors="pt").input_ids.to(
+            model.device
+        )
+        output = model.generate(input_ids, max_new_tokens=20)
+        print(tokenizer.decode(output[0]))
+    except Exception as e:
+        print(f"Generation test skipped (VL model may need image input): {e}")
     print("==========================================")
 
     # Save to disk in compressed-tensors format
