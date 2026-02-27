@@ -38,6 +38,5 @@ train:
   # No max_steps - will train for full 100k samples × 2 epochs = 25k steps
   save_steps: null  # Don't save intermediate checkpoints
   save_epochs: 1    # Only save at end of each epoch (final checkpoint)
-  save_hf_weights: true
   # PERFORMANCE TUNING
   enable_gradient_checkpointing: false # Still disabled for B200 speed

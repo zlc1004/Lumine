@@ -37,6 +37,5 @@ train:
   # No max_steps - will train for full 1M samples × 3 epochs = 187k steps
   save_steps: null  # Don't save intermediate checkpoints
   save_epochs: 1    # Only save at end of each epoch (final checkpoint)
-  save_hf_weights: true
   # PERFORMANCE TUNING
   enable_gradient_checkpointing: false # Disabled for max throughput
