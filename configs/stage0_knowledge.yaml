@@ -1,7 +1,7 @@
-# Lumine Stage 0: Knowledge Injection
+# Lumine Stage 0: Knowledge Injection (OPTIMIZED for 8x RTX 6000 Pro Blackwell)
 # Injects Genshin Impact lore/wiki Q&A into the base model (text-only, no actions)
 # Base: Qwen2-VL-7B-Instruct
-# Run this BEFORE Stage 1 pretrain.
+# Hardware: 192 CPU cores, 2TB RAM, 8x96GB GPUs
 
 model:
   model_path: models/Qwen2-VL-7B-Base
@@ -15,7 +15,8 @@ data:
   train_size: -1  # Use all available knowledge data
   datasets_type: mapping
   source_name: lumine_knowledge
-  num_workers: 32
+  num_workers: 128  # 16 workers per GPU (192 cores / 8 GPUs = 24, use ~16 for headroom)
+  prefetch_factor: 4  # Prefetch 4 batches per worker
   mm_configs:
     image_max_pixels: 921600
     video_max_pixels: 921600
@@ -27,7 +28,7 @@ train:
   output_dir: output/Lumine-Agent-Knowledge-VL-7B
   data_parallel_mode: fsdp2
   wandb_project: lumine
-  wandb_name: lumine_stage0_knowledge
+  wandb_name: lumine_stage0_knowledge_optimized
   rmpad: false
   rmpad_with_pos_ids: true
   ulysses_parallel_size: 1
@@ -37,10 +38,13 @@ train:
   enable_fsdp_offload: false
   lr_decay_style: cosine
   num_train_epochs: 3
-  micro_batch_size: 4
-  # 8 GPUs x 4 MBS x 3 grad_accum = 96 global batch size
-  global_batch_size: 96
+  
+  # MASSIVE batch size for text-only (no images = tiny memory footprint)
+  micro_batch_size: 32  # 8x larger than before (text is lightweight)
+  # 8 GPUs x 32 MBS x 1 grad_accum = 256 global batch size
+  global_batch_size: 256
+  
   max_steps: -1
   save_steps: 500
   save_hf_weights: true
-  enable_gradient_checkpointing: true
+  enable_gradient_checkpointing: false  # Disable for speed (plenty of VRAM for text)

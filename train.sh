@@ -50,6 +50,7 @@ run_stage() {
     echo "=========================================="
     
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    export TOKENIZERS_PARALLELISM=false
     torchrun --nproc_per_node="$GPU_COUNT" -m tasks.omni.train_qwen_vl "$config"
     
     if [ $? -eq 0 ]; then
