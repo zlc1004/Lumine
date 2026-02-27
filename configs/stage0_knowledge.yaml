@@ -28,7 +28,7 @@ train:
   data_parallel_mode: fsdp2
   wandb_project: lumine
   wandb_name: lumine_stage0_knowledge
-  rmpad: true
+  rmpad: false
   rmpad_with_pos_ids: true
   ulysses_parallel_size: 1
   freeze_vit: true  # No vision data - freeze ViT to save memory and avoid degradation
