@@ -7,7 +7,7 @@ IFS=$'\n\t'     # Better string handling
 
 CHECKPOINT_PATH="${1:-}"
 MODEL_ASSETS_PATH="${2:-}"
-OUTPUT_DIR="/workspace/Lumine/output/hf_ckpt"
+OUTPUT_DIR="./output/hf_ckpt"
 
 # Helper function for pretty logging
 log() {
@@ -22,15 +22,15 @@ fi
 
 # --- 1. Environment Setup ---
 log "Activating virtual environment..."
-source /workspace/Lumine/VeOmni/.venv/bin/activate
+source ./VeOmni/.venv/bin/activate
 
 # --- 2. Model Merging ---
 log "Merging DCP checkpoints to HF format..."
 log "Input: $CHECKPOINT_PATH"
 log "Output: $OUTPUT_DIR"
 
-cd /workspace/Lumine/VeOmni
-python /workspace/Lumine/VeOmni/scripts/merge_dcp_to_hf.py \
+cd ./VeOmni
+python ./VeOmni/scripts/merge_dcp_to_hf.py \
     --load-dir "$CHECKPOINT_PATH" \
     --save-dir "$OUTPUT_DIR" \
     --model-assets-dir "$MODEL_ASSETS_PATH" \
@@ -38,7 +38,7 @@ python /workspace/Lumine/VeOmni/scripts/merge_dcp_to_hf.py \
 
 # --- 3. Assets Transfer ---
 log "Injecting model assets (configs/tokenizers)..."
-cd /workspace/Lumine
+cd ../
 
 # List of required assets
 ASSETS=(
@@ -64,7 +64,7 @@ done
 log "Starting compression (tar + pigz)..."
 SIZE=$(du -sb "$OUTPUT_DIR" | awk '{print $1}')
 
-tar -cf - -C /workspace/Lumine/output hf_ckpt \
+tar -cf - -C ./output hf_ckpt \
  | pv -p -t -e -r -s "$SIZE" \
  | pigz > hf_ckpt.tar.gz
 
