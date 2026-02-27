@@ -1,7 +1,7 @@
 # Lumine Pre-training Data Config
 
 sources:
-  - genshinPlayData/veomni_knowledge.jsonl
+  - genshinPlayData/veomni_knowledge_positive.jsonl
 names:
   - lumine_knowledge
 preprocessor: lumine_knowledge

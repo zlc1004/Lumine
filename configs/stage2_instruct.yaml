@@ -3,7 +3,7 @@
 # 2x B200 (384GB Total VRAM) | Goal: Language-to-Action Grounding
 
 model:
-  model_path: output/Lumine-Agent-Pretraining-VL-7B
+  model_path: output/Lumine-Agent-Pretrain-VL-7B
   attn_implementation: flash_attention_2
 
 data:

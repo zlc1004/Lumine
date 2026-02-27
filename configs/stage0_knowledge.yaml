@@ -4,7 +4,7 @@
 # Run this BEFORE Stage 1 pretrain.
 
 model:
-  model_path: models/Qwen2-VL-7B-Instruct
+  model_path: models/Qwen2-VL-7B-Base
   attn_implementation: flash_attention_2
   add_custom_tokens: false  # No action tokens needed for text-only lore Q&A
 

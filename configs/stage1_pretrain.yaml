@@ -2,7 +2,7 @@
 # Adjusted for 8x NVIDIA RTX PRO 6000 Ada (96GB VRAM each)
 
 model:
-  model_path: models/Qwen2-VL-7B-Base
+  model_path: output/Lumine-Agent-Base-VL-7B
   attn_implementation: flash_attention_2
   add_custom_tokens: true # Add custom tokens for agent pretraining (action markers, UI elements, etc.)
 
@@ -23,7 +23,7 @@ data:
     use_audio_in_video: false
 
 train:
-  output_dir: output/Lumine-Agent-Pretraining-VL-7B
+  output_dir: output/Lumine-Agent-Pretrain-VL-7B
   data_parallel_mode: fsdp2
   wandb_project: lumine
   wandb_name: lumine_rtx6000_720p_8frame
