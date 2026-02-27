@@ -1,8 +1,9 @@
 # Lumine Stage 1: Blackwell-Optimized Pre-training
 # Adjusted for 8x NVIDIA RTX PRO 6000 Ada (96GB VRAM each)
+# Loads Stage 0 checkpoint with injected Genshin lore/wiki knowledge
 
 model:
-  model_path: output/Lumine-Agent-Base-VL-7B
+  model_path: models/Lumine-Agent-Knowledge-VL-7B
   attn_implementation: flash_attention_2
   add_custom_tokens: true # Add custom tokens for agent pretraining (action markers, UI elements, etc.)
 
@@ -41,7 +42,8 @@ train:
   # 8 GPUs x 2 MBS x 6 grad_accum = 96 global batch size
   global_batch_size: 96
   max_steps: 10000
-  save_steps: 1000
+  save_steps: null  # Don't save intermediate checkpoints
+  save_epochs: 1    # Only save at end of each epoch (final checkpoint)
   save_hf_weights: true
   # RE-ENABLED: Gradient checkpointing needed for 12k sequences
   enable_gradient_checkpointing: true

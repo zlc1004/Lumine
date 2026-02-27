@@ -45,6 +45,7 @@ train:
   global_batch_size: 256
   
   max_steps: -1
-  save_steps: 500
+  save_steps: null  # Don't save intermediate checkpoints
+  save_epochs: 1    # Only save at end of each epoch (final checkpoint)
   save_hf_weights: true
   enable_gradient_checkpointing: false  # Disable for speed (plenty of VRAM for text)
