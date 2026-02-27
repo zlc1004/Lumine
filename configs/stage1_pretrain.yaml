@@ -2,7 +2,7 @@
 # AWS g7e.48xlarge: 8x GB202 (768GB Total VRAM) - Estimated Time: ~1.2 - 1.8 Hours
 
 model:
-  model_path: /workspace/Lumine/models/Qwen2-VL-7B-Base
+  model_path: models/Qwen2-VL-7B-Base
   attn_implementation: flash_attention_2
 
 data:
