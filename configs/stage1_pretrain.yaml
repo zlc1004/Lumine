@@ -43,5 +43,5 @@ train:
   max_steps: 10000
   save_steps: 1000
   save_hf_weights: true
-  # DISABLED: Gradient checkpointing for faster training (plenty of VRAM available)
-  enable_gradient_checkpointing: false
+  # RE-ENABLED: Gradient checkpointing needed for 12k sequences
+  enable_gradient_checkpointing: true
