@@ -57,13 +57,16 @@ logger.addHandler(file_handler)
 RATING_PROMPT = """\
 You are evaluating Q&A pairs that will be used to train an AI agent to play Genshin Impact.
 
-Rate the following Q&A pair on a scale from -100 to 100:
+Rate the following Q&A pair on a scale from -100 to 100 using your best judgment for the EXACT rating value.
 
-  -100 = Completely useless: wrong, nonsensical, off-topic, or harmful to training
-   -50 = Poor: vague, too generic, or barely relevant to Genshin Impact gameplay/lore
-     0 = Neutral: factually okay but adds little value (e.g. trivial, already obvious)
-    50 = Good: useful Genshin-specific knowledge about items, characters, quests, mechanics
-   100 = Excellent: precise, actionable, important info an agent must know to play well
+DO NOT use round numbers like 50, 75, 85, etc. Use precise ratings like 34, 67, -23, 91, etc.
+
+Rating guidelines (but use any integer in the range):
+  -100 to -75: Completely wrong, harmful, or totally irrelevant to Genshin Impact
+   -74 to -25: Misleading, very vague, or barely on-topic
+   -24 to  24: Trivial information with little training value, or very generic
+    25 to  74: Useful Genshin-specific knowledge (items, quests, mechanics, lore)
+    75 to 100: Critical gameplay info, precise details, or important lore an agent must know
 
 Original source text (for context):
 {source_text}
@@ -73,7 +76,9 @@ Question: {question}
 Answer: {answer}
 
 Respond with ONLY a JSON object in this exact format, no other text:
-{{"rating": <integer from -100 to 100>, "reason": "<one sentence>"}}"""
+{{"rating": <integer from -100 to 100>, "reason": "<one sentence>"}}
+
+Remember: Use SPECIFIC ratings (e.g., 67, -82, 38), NOT round multiples of 5 or 10."""
 
 
 async def rate_entry(
