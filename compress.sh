@@ -30,7 +30,7 @@ log "Input: $CHECKPOINT_PATH"
 log "Output: $OUTPUT_DIR"
 
 cd ./VeOmni
-python ./VeOmni/scripts/merge_dcp_to_hf.py \
+python ./scripts/merge_dcp_to_hf.py \
     --load-dir "$CHECKPOINT_PATH" \
     --save-dir "$OUTPUT_DIR" \
     --model-assets-dir "$MODEL_ASSETS_PATH" \
