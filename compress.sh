@@ -7,7 +7,7 @@ IFS=$'\n\t'     # Better string handling
 
 CHECKPOINT_PATH="${1:-}"
 MODEL_ASSETS_PATH="${2:-}"
-OUTPUT_DIR="./output/hf_ckpt"
+OUTPUT_DIR="output/hf_ckpt"
 
 # Helper function for pretty logging
 log() {
@@ -32,7 +32,7 @@ log "Output: $OUTPUT_DIR"
 cd ./VeOmni
 python ./scripts/merge_dcp_to_hf.py \
     --load-dir "$CHECKPOINT_PATH" \
-    --save-dir "$OUTPUT_DIR" \
+    --save-dir "../$OUTPUT_DIR" \
     --model-assets-dir "$MODEL_ASSETS_PATH" \
     --shard-size 5000000000  # 5GB shards are better for your 500GB RAM
 
