@@ -42,6 +42,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress HTTP request logs from openai/httpx
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+
 file_handler = logging.FileHandler("rate_knowledge_quality.log")
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(
@@ -212,6 +216,14 @@ async def run(args):
         logger.info("Nothing to do — all entries already have ratings.")
         return
 
+    # Apply limit if in test mode
+    if args.limit and args.limit > 0:
+        original_pending = len(pending)
+        pending = pending[: args.limit]
+        logger.info(
+            f"Test mode: limiting to first {len(pending)} of {original_pending} pending entries"
+        )
+
     # Build mapping of entries to source text
     entry_sources = {}
     missing_sources = 0
@@ -336,6 +348,12 @@ def main():
         type=int,
         default=32,
         help="Max concurrent requests (default: 32)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Test mode: only rate first N entries (default: rate all)",
     )
 
     args = parser.parse_args()
