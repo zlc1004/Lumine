@@ -2,6 +2,7 @@
 # Lumine Training Script - Run stages sequentially with configurable GPUs
 # Usage: ./train.sh [stage] [--gpu <number>]
 #   ./train.sh all --gpu 2    - Run all stages on 2 GPUs
+#   ./train.sh 0 --gpu 8      - Run stage 0 (knowledge) on 8 GPUs
 #   ./train.sh 1 --gpu 1      - Run only stage 1 on 1 GPU
 
 set -e
@@ -24,7 +25,7 @@ GPU_COUNT=1
 # Simple argument parsing
 while [[ $# -gt 0 ]]; do
   case $1 in
-    1|2|3|all)
+    0|1|2|3|all)
       STAGE="$1"
       shift
       ;;
@@ -60,13 +61,16 @@ run_stage() {
 }
 
 if [ "$STAGE" == "all" ]; then
-    echo "Running all 3 training stages..."
+    echo "Running all training stages (0, 1, 2, 3)..."
+    run_stage 0 "$SCRIPT_DIR/configs/stage0_knowledge.yaml"
     run_stage 1 "$SCRIPT_DIR/configs/stage1_pretrain.yaml"
     run_stage 2 "$SCRIPT_DIR/configs/stage2_instruct.yaml"
     run_stage 3 "$SCRIPT_DIR/configs/stage3_reasoning.yaml"
     echo "=========================================="
     echo "All training stages completed!"
     echo "=========================================="
+elif [ "$STAGE" == "0" ]; then
+    run_stage 0 "$SCRIPT_DIR/configs/stage0_knowledge.yaml"
 elif [ "$STAGE" == "1" ]; then
     run_stage 1 "$SCRIPT_DIR/configs/stage1_pretrain.yaml"
 elif [ "$STAGE" == "2" ]; then
