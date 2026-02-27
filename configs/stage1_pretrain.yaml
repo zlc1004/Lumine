@@ -4,6 +4,7 @@
 model:
   model_path: models/Qwen2-VL-7B-Base
   attn_implementation: flash_attention_2
+  add_custom_tokens: true # Add custom tokens for agent pretraining (action markers, UI elements, etc.)
 
 data:
   train_path: configs/data_pretrain.yaml
