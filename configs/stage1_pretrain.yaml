@@ -10,7 +10,7 @@ data:
   train_path: configs/data_pretrain.yaml
   chat_template: qwen2vl
   # Reduced from 16k to 8k to fit in memory
-  max_seq_len: 8192
+  max_seq_len: 12288
   train_size: 8000000
   datasets_type: mapping
   source_name: lumine_pretrain
@@ -36,12 +36,12 @@ train:
   enable_fsdp_offload: false
   lr_decay_style: cosine
   num_train_epochs: 2
-  # REDUCED: micro_batch_size from 3 to 1 for 8k sequence length
-  micro_batch_size: 1
-  # ADJUSTED: 8 GPUs x 1 MBS x 12 grad accum = 96 global batch size
+  # Optimized: MBS=4 for 4x speedup with 12k sequences
+  micro_batch_size: 4
+  # 8 GPUs x 4 MBS x 3 grad_accum = 96 global batch size
   global_batch_size: 96
   max_steps: 10000
   save_steps: 1000
   save_hf_weights: true
   # ENABLED: Gradient checkpointing to save memory
-  enable_gradient_checkpointing: true
+  enable_gradient_checkpointing: false
