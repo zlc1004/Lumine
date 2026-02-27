@@ -36,12 +36,12 @@ train:
   enable_fsdp_offload: false
   lr_decay_style: cosine
   num_train_epochs: 2
-  # Optimized: MBS=4 for 4x speedup with 12k sequences
-  micro_batch_size: 4
-  # 8 GPUs x 4 MBS x 3 grad_accum = 96 global batch size
+  # Balanced: MBS=2 for 12k sequences with checkpointing OFF
+  micro_batch_size: 2
+  # 8 GPUs x 2 MBS x 6 grad_accum = 96 global batch size
   global_batch_size: 96
   max_steps: 10000
   save_steps: 1000
   save_hf_weights: true
-  # ENABLED: Gradient checkpointing to save memory
-  enable_gradient_checkpointing: false
+  # RE-ENABLED: Gradient checkpointing for 12k sequences
+  enable_gradient_checkpointing: true
