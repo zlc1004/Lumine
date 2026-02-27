@@ -1,5 +1,5 @@
 # Lumine Stage 1: Blackwell-Optimized Pre-training
-# AWS g7e.48xlarge: 8x GB202 (768GB Total VRAM) - Estimated Time: ~1.2 - 1.8 Hours
+# Adjusted for 8x NVIDIA RTX PRO 6000 Ada (96GB VRAM each)
 
 model:
   model_path: models/Qwen2-VL-7B-Base
@@ -9,12 +9,12 @@ model:
 data:
   train_path: configs/data_pretrain.yaml
   chat_template: qwen2vl
-  # Increased to 16k to ensure 8 frames of 720p + text never truncate
-  max_seq_len: 16384 
+  # Reduced from 16k to 8k to fit in memory
+  max_seq_len: 8192
   train_size: 8000000
   datasets_type: mapping
   source_name: lumine_pretrain
-  num_workers: 32 # 4 workers per GPU for g7e.48xlarge (192 vCPUs, 2TB RAM)
+  num_workers: 32 # 4 workers per GPU (with 192 CPU cores, plenty available)
   mm_configs:
     image_max_pixels: 921600 # 720p (1280x720)
     video_max_pixels: 921600 # 720p (1280x720)
@@ -26,9 +26,9 @@ train:
   output_dir: output/Lumine-Agent-Pretraining-VL-7B
   data_parallel_mode: fsdp2
   wandb_project: lumine
-  wandb_name: lumine_gb202_720p_8frame
+  wandb_name: lumine_rtx6000_720p_8frame
   rmpad: false # Disabled - using rmpad_with_pos_ids instead
-  rmpad_with_pos_ids: true # Enabled for speed: skips padding tokens in 16k window
+  rmpad_with_pos_ids: true # Enabled for speed: skips padding tokens
   ulysses_parallel_size: 1
   freeze_vit: false
   lr: 1.0e-5
@@ -36,10 +36,12 @@ train:
   enable_fsdp_offload: false
   lr_decay_style: cosine
   num_train_epochs: 2
-  micro_batch_size: 3 # GB202 has 96GB VRAM, optimized for 16k seq with safety margin
-  global_batch_size: 96 # 8 GPUs x 3 MBS x 4 grad accum = balanced throughput
+  # REDUCED: micro_batch_size from 3 to 1 for 8k sequence length
+  micro_batch_size: 1
+  # ADJUSTED: 8 GPUs x 1 MBS x 12 grad accum = 96 global batch size
+  global_batch_size: 96
   max_steps: 10000
   save_steps: 1000
   save_hf_weights: true
-  # Performance: Gradient checkpointing OFF - GB202 has ample VRAM (96GB per GPU)
-  enable_gradient_checkpointing: false
+  # ENABLED: Gradient checkpointing to save memory
+  enable_gradient_checkpointing: true
