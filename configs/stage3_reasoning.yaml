@@ -34,8 +34,8 @@ train:
   lr_decay_style: cosine
   num_train_epochs: 2
   micro_batch_size: 1 # 32k context + MBZ 1 is safer for peak CoT samples
-  global_batch_size: 8 
-  max_steps: 2000
+  global_batch_size: 8
+  # No max_steps - will train for full 100k samples × 2 epochs = 25k steps
   save_steps: null  # Don't save intermediate checkpoints
   save_epochs: 1    # Only save at end of each epoch (final checkpoint)
   save_hf_weights: true

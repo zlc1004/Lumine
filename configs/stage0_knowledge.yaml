@@ -44,7 +44,7 @@ train:
   # 8 GPUs x 32 MBS x 1 grad_accum = 256 global batch size
   global_batch_size: 256
   
-  max_steps: -1
+  # No max_steps - will train for full dataset × num_train_epochs
   save_steps: null  # Don't save intermediate checkpoints
   save_epochs: 1    # Only save at end of each epoch (final checkpoint)
   save_hf_weights: true

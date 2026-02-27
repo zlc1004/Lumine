@@ -34,7 +34,7 @@ train:
   num_train_epochs: 3
   micro_batch_size: 2 # B200 comfortably handles MBZ 2 with 16k context
   global_batch_size: 16 # Tighter batch size for instruction tuning
-  max_steps: 5000
+  # No max_steps - will train for full 1M samples × 3 epochs = 187k steps
   save_steps: null  # Don't save intermediate checkpoints
   save_epochs: 1    # Only save at end of each epoch (final checkpoint)
   save_hf_weights: true
