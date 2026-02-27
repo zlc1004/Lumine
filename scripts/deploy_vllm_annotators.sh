@@ -16,37 +16,14 @@ echo "Max model length: $MAX_MODEL_LEN tokens"
 echo "GPU memory utilization: ${GPU_MEMORY_UTIL}"
 echo ""
 
-# Create log directory
-mkdir -p logs/vllm_annotators
-
-LOG_FILE="logs/vllm_annotators/vllm_dp8.log"
-
 echo "Starting vLLM server with internal load balancing..."
 
-nohup vllm serve "$MODEL" \
+~/.local/bin/uv run -m vllm.entrypoints.openai.api_server \
+    --model "$MODEL" \
     --port $PORT \
     --host 0.0.0.0 \
     --data-parallel-size $DATA_PARALLEL_SIZE \
     --gpu-memory-utilization $GPU_MEMORY_UTIL \
     --max-model-len $MAX_MODEL_LEN \
     --max-num-seqs 256 \
-    --trust-remote-code \
-    --disable-log-requests \
-    > "$LOG_FILE" 2>&1 &
-
-PID=$!
-
-echo ""
-echo "vLLM server started with PID: $PID"
-echo "Log file: $LOG_FILE"
-echo ""
-echo "Wait ~2-3 minutes for model to load across 8 GPUs, then check health:"
-echo "  curl http://localhost:$PORT/health"
-echo ""
-echo "To view logs:"
-echo "  tail -f $LOG_FILE"
-echo ""
-echo "To stop:"
-echo "  kill $PID"
-echo "  # or"
-echo "  pkill -f 'vllm serve.*Qwen3-VL-32B-Instruct'"
+    --trust-remote-code
