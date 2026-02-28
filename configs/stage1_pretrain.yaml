@@ -3,7 +3,7 @@
 # Loads Stage 0 checkpoint with injected Genshin lore/wiki knowledge
 
 model:
-  model_path: models/Lumine-Agent-Knowledge-VL-7B
+  model_path: models/Lumine-Agent-Base-VL-7B
   attn_implementation: flash_attention_2
   add_custom_tokens: true # Add custom tokens for agent pretraining (action markers, UI elements, etc.)
 
