@@ -1,10 +1,10 @@
 # Lumine Stage 0: Knowledge Injection (OPTIMIZED for 8x RTX 6000 Pro Blackwell)
 # Injects Genshin Impact lore/wiki Q&A into the base model (text-only, no actions)
-# Base: Qwen2-VL-7B-Instruct
+# Base: Qwen2-VL-7B-Instruct (using Instruct for better stop behavior)
 # Hardware: 192 CPU cores, 2TB RAM, 8x96GB GPUs
 
 model:
-  model_path: models/Qwen2-VL-7B-Base
+  model_path: models/Qwen2-VL-7B-Instruct  # Changed from Base to Instruct
   attn_implementation: flash_attention_2
   add_custom_tokens: false  # No action tokens needed for text-only lore Q&A
 
