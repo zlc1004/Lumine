@@ -9,13 +9,13 @@ model:
 data:
   train_path: configs/data_instruct.yaml
   chat_template: qwen2vl
-  # Higher context for instruction + 8-frame history + reasoning tokens
-  max_seq_len: 16384 
+  max_seq_len: 16384
   train_size: 1000000
   datasets_type: mapping
+  drop_last: false  # Don't drop incomplete batches
   mm_configs:
-    image_max_pixels: 921600 # Keeping 720p for precise grounding
-    video_max_pixels: 921600 
+    image_max_pixels: 921600
+    video_max_pixels: 921600
     max_frames: 8
     fps: 2.0
 

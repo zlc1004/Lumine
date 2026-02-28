@@ -44,14 +44,17 @@ done
 run_stage() {
     local stage=$1
     local config=$2
+    local log_file="$SCRIPT_DIR/stage${stage}_training.log"
+    
     echo "=========================================="
     echo "Running Stage $stage on $GPU_COUNT GPU(s)"
     echo "Config: $config"
+    echo "Log file: $log_file"
     echo "=========================================="
     
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     export TOKENIZERS_PARALLELISM=false
-    torchrun --nproc_per_node="$GPU_COUNT" -m tasks.omni.train_qwen_vl "$config"
+    torchrun --nproc_per_node="$GPU_COUNT" -m tasks.omni.train_qwen_vl "$config" 2>&1 | tee "$log_file"
     
     if [ $? -eq 0 ]; then
         echo "Stage $stage completed successfully!"

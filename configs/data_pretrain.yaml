@@ -5,6 +5,7 @@ sources:
 names:
   - lumine_pretrain
 preprocessor: lumine_pretrain
+drop_last: false  # Don't drop incomplete batches
 schedule:
   - schedule_type: const
     weights: [1.0]

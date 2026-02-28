@@ -9,13 +9,13 @@ model:
 data:
   train_path: configs/data_reasoning.yaml
   chat_template: qwen2vl
-  # Expanded to 32k to handle long CoT reasoning + 8-frame 720p history
-  max_seq_len: 32768 
+  max_seq_len: 32768
   train_size: 100000
   datasets_type: mapping
+  drop_last: false  # Don't drop incomplete batches
   mm_configs:
-    image_max_pixels: 921600 # Restored 720p for high-detail reasoning
-    video_max_pixels: 921600 
+    image_max_pixels: 921600
+    video_max_pixels: 921600
     max_frames: 8
     fps: 2.0
 
