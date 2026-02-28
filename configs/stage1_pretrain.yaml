@@ -3,7 +3,7 @@
 # Loads Stage 0 checkpoint with injected Genshin lore/wiki knowledge
 
 model:
-  model_path: models/Lumine-Agent-Base-VL-7B
+  model_path: models/Lumine-Agent-Base-VL-7B  # Stage 0 checkpoint with knowledge injection (config.json fixed)
   attn_implementation: flash_attention_2
   add_custom_tokens: true # Add custom tokens for agent pretraining (action markers, UI elements, etc.)
 
@@ -28,8 +28,8 @@ train:
   data_parallel_mode: fsdp2
   wandb_project: lumine
   wandb_name: lumine_rtx6000_720p_8frame
-  rmpad: false # Disabled - using rmpad_with_pos_ids instead
-  rmpad_with_pos_ids: true # Enabled for speed: skips padding tokens
+  rmpad: false # Disabled - using fixed padding instead
+  rmpad_with_pos_ids: false # Must be false when rmpad is false (prevents train_steps=0 bug)
   ulysses_parallel_size: 1
   freeze_vit: false
   lr: 1.0e-5
