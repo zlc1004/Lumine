@@ -10,10 +10,8 @@ data:
   chat_template: qwen2vl
   max_seq_len: 4096
   train_size: -1
-  datasets_type: mapping
-  source_name: lumine_knowledge
   num_workers: 32
-  drop_last: false  # CRITICAL: Don't drop incomplete batches
+  drop_last: False  # CRITICAL: Use capital F for Python bool
   mm_configs:
     image_max_pixels: 921600
     video_max_pixels: 921600
@@ -26,13 +24,13 @@ train:
   wandb_project: lumine
   wandb_name: lumine_stage0_knowledge
   rmpad: false
-  rmpad_with_pos_ids: true
+  rmpad_with_pos_ids: false  # Must be false when rmpad is false
   ulysses_parallel_size: 1
   freeze_vit: true
   lr: 2.0e-5
   init_device: meta
   lr_decay_style: cosine
   num_train_epochs: 3
-  micro_batch_size: 8  # Reduced from 32 to be safer
+  micro_batch_size: 8
   global_batch_size: 64  # 8 GPUs × 8 MBS = 64
   save_epochs: 1
