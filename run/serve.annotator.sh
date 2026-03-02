@@ -1,6 +1,4 @@
-#!/bin/bash
-# Deploy Qwen3-VL-32B-Instruct with Data Parallelism (8 GPUs)
-# Uses vLLM's internal load balancing with data-parallel-size
+source .venv/bin/activate
 
 MODEL="Qwen/Qwen3-VL-32B-Instruct"
 PORT=8000
