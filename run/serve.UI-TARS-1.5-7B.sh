@@ -11,7 +11,7 @@ fi
 # Launch the vLLM server
 python3 -m vllm.entrypoints.openai.api_server \
     --model ./models/UI-TARS-1.5-7B \
-    --served-model-name lumine-agent-vl-7b \
+    --served-model-name UI-TARS-1.5-7B \
     --dtype bfloat16 \
     --max-model-len 8192 \
     --port 8000
