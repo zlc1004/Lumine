@@ -19,6 +19,7 @@ typedef unsigned long long QWORD;
 std::ofstream g_logFile;
 std::mutex g_mutex;
 std::atomic<bool> g_running(true);
+std::atomic<bool> g_paused(false);
 HHOOK g_keyboardHook = nullptr;
 bool g_cursorVisible = true;
 bool g_isClipped = false;
@@ -111,8 +112,38 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
         bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
         bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
 
-        if (isDown) g_keysHeld[kbStruct->vkCode] = true;
-        if (isUp) g_keysHeld[kbStruct->vkCode] = false;
+        // Handle F12 (pause) and F11 (resume) before updating key state
+        if (kbStruct->vkCode == VK_F12 && isDown) {
+            if (!g_paused) {
+                g_paused = true;
+                int64_t ts = GetHighResTimestamp();
+                std::lock_guard<std::mutex> lock(g_mutex);
+                g_logFile << ts << ",PAUSE\n";
+                g_logFile.flush();
+                std::cout << "Recording PAUSED (F12)" << std::endl;
+            }
+            // Don't record F12 key in held keys
+            return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
+        }
+
+        if (kbStruct->vkCode == VK_F11 && isDown) {
+            if (g_paused) {
+                g_paused = false;
+                int64_t ts = GetHighResTimestamp();
+                std::lock_guard<std::mutex> lock(g_mutex);
+                g_logFile << ts << ",RESUME\n";
+                g_logFile.flush();
+                std::cout << "Recording RESUMED (F11)" << std::endl;
+            }
+            // Don't record F11 key in held keys
+            return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
+        }
+
+        // Don't update key states when paused
+        if (!g_paused) {
+            if (isDown) g_keysHeld[kbStruct->vkCode] = true;
+            if (isUp) g_keysHeld[kbStruct->vkCode] = false;
+        }
 
         if (kbStruct->vkCode == VK_F5 && isDown) {
             g_running = false;
@@ -146,6 +177,9 @@ void ProcessRawInput(int64_t timestamp) {
         rawCopy = std::move(g_pendingRawInput);
         g_pendingRawInput.clear();
     }
+
+    // Skip processing if paused
+    if (g_paused) return;
 
     long totalDx = 0;
     long totalDy = 0;
@@ -262,6 +296,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Output file: " << outputFile << std::endl;
     std::cout << std::endl;
     std::cout << "Controls:" << std::endl;
+    std::cout << "  Press F12 to pause recording" << std::endl;
+    std::cout << "  Press F11 to resume recording" << std::endl;
     std::cout << "  Press F5 to stop recording" << std::endl;
     std::cout << std::endl;
 
@@ -284,6 +320,8 @@ int main(int argc, char* argv[]) {
     g_logFile << "#   MOUSE,WHEEL,delta" << std::endl;
     g_logFile << "#   MOUSE,SHOW|HIDE" << std::endl;
     g_logFile << "#   MOUSE,LOCK|UNLOCK" << std::endl;
+    g_logFile << "#   PAUSE" << std::endl;
+    g_logFile << "#   RESUME" << std::endl;
     g_logFile << "#" << std::endl;
     g_logFile.flush();
 
@@ -349,36 +387,39 @@ int main(int argc, char* argv[]) {
             // 1. Process Mouse
             ProcessRawInput(highResTs);
             
-            // 2. Poll Key State (including mouse buttons)
-            std::stringstream heldKeys;
-            
-            // Mouse buttons
-            if (g_mouseHeld[0]) heldKeys << "LB ";
-            if (g_mouseHeld[1]) heldKeys << "RB ";
-            if (g_mouseHeld[2]) heldKeys << "MB ";
-            if (g_mouseHeld[3]) heldKeys << "XB1 ";
-            if (g_mouseHeld[4]) heldKeys << "XB2 ";
+            // Skip KEY_CHUNK and cursor state logging when paused
+            if (!g_paused) {
+                // 2. Poll Key State (including mouse buttons)
+                std::stringstream heldKeys;
+                
+                // Mouse buttons
+                if (g_mouseHeld[0]) heldKeys << "LB ";
+                if (g_mouseHeld[1]) heldKeys << "RB ";
+                if (g_mouseHeld[2]) heldKeys << "MB ";
+                if (g_mouseHeld[3]) heldKeys << "XB1 ";
+                if (g_mouseHeld[4]) heldKeys << "XB2 ";
 
-            // Keyboard
-            for (int i = 0; i < 256; i++) {
-                if (g_keysHeld[i]) {
-                    std::string token = KeyCodeToToken(i);
-                    if (!token.empty()) {
-                        heldKeys << token << " ";
+                // Keyboard
+                for (int i = 0; i < 256; i++) {
+                    if (g_keysHeld[i]) {
+                        std::string token = KeyCodeToToken(i);
+                        if (!token.empty()) {
+                            heldKeys << token << " ";
+                        }
                     }
                 }
-            }
-            
-            std::string keys = heldKeys.str();
-            // Trim trailing space
-            if (!keys.empty() && keys.back() == ' ') keys.pop_back();
+                
+                std::string keys = heldKeys.str();
+                // Trim trailing space
+                if (!keys.empty() && keys.back() == ' ') keys.pop_back();
 
-            {
-                std::lock_guard<std::mutex> lock(g_mutex);
-                g_logFile << highResTs << ",KEY_CHUNK," << keys << "\n";
-            }
+                {
+                    std::lock_guard<std::mutex> lock(g_mutex);
+                    g_logFile << highResTs << ",KEY_CHUNK," << keys << "\n";
+                }
 
-            CheckCursorState(highResTs);
+                CheckCursorState(highResTs);
+            }
             
             nextTickTime += tickDuration;
         }

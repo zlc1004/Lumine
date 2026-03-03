@@ -83,6 +83,9 @@ class KeyRecorderParser:
         self.key_chunks: List[KeyChunkEvent] = []
         self.mouse_events: List[MouseEvent] = []
         self.start_timestamp: Optional[int] = None
+        self.pause_ranges: List[
+            Tuple[int, int]
+        ] = []  # List of (pause_start, resume_time) tuples
 
     def parse(self):
         """Parse the log file"""
@@ -90,6 +93,7 @@ class KeyRecorderParser:
             print(f"Error: Log file {self.log_path} not found")
             return self
 
+        pause_start = None
         with open(self.log_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -111,6 +115,16 @@ class KeyRecorderParser:
 
                 event_type = parts[1]
 
+                # Handle PAUSE/RESUME events
+                if event_type == "PAUSE":
+                    pause_start = timestamp
+                    continue
+                elif event_type == "RESUME":
+                    if pause_start is not None:
+                        self.pause_ranges.append((pause_start, timestamp))
+                        pause_start = None
+                    continue
+
                 if event_type == "KEY_CHUNK":
                     keys = parts[2].split() if len(parts) > 2 else []
                     self.key_chunks.append(KeyChunkEvent(timestamp, keys))
@@ -123,7 +137,13 @@ class KeyRecorderParser:
                 elif event_type == "MOUSE_REL":
                     dx = int(parts[2]) if len(parts) > 2 else 0
                     dy = int(parts[3]) if len(parts) > 3 else 0
-                    self.mouse_events.append(MouseEvent(timestamp, "REL", dx=dx, dy=dy))
+                    evt = MouseEvent(timestamp, "REL", dx=dx, dy=dy)
+                    self.mouse_events.append(evt)
+                    # Debug output for first few REL events
+                    if len(self.mouse_events) <= 5 and (dx != 0 or dy != 0):
+                        print(
+                            f"DEBUG: Parsed MOUSE_REL - timestamp={timestamp}, dx={dx}, dy={dy}, stored event: dx={evt.dx}, dy={evt.dy}"
+                        )
 
                 elif event_type == "MOUSE":
                     if len(parts) > 2 and parts[2] == "WHEEL":
@@ -131,6 +151,11 @@ class KeyRecorderParser:
                         self.mouse_events.append(
                             MouseEvent(timestamp, "WHEEL", delta=delta)
                         )
+
+        # Handle unclosed pause (pause without resume at end of log)
+        if pause_start is not None:
+            # Set end to a very large timestamp
+            self.pause_ranges.append((pause_start, 2**63 - 1))
 
         # Sort by timestamp
         self.key_chunks.sort(key=lambda x: x.timestamp)
@@ -141,9 +166,16 @@ class KeyRecorderParser:
         self.mouse_timestamps = [e.timestamp for e in self.mouse_events]
 
         print(
-            f"Parsed {len(self.key_chunks)} key chunks, {len(self.mouse_events)} mouse events"
+            f"Parsed {len(self.key_chunks)} key chunks, {len(self.mouse_events)} mouse events, {len(self.pause_ranges)} pause ranges"
         )
         return self
+
+    def is_paused(self, timestamp: int) -> bool:
+        """Check if a timestamp falls within a paused range"""
+        for pause_start, resume_time in self.pause_ranges:
+            if pause_start <= timestamp < resume_time:
+                return True
+        return False
 
     def get_actions_at_time(
         self, start_time: int, duration_ms: int = 200
@@ -163,13 +195,22 @@ class KeyRecorderParser:
             mouse_end_idx = bisect.bisect_right(self.mouse_timestamps, c_end - 1)
 
             dx = dy = scroll = 0
+            rel_count = 0
             for j in range(mouse_start_idx, mouse_end_idx):
                 e = self.mouse_events[j]
                 if e.event_type == "REL":
                     dx += e.dx
                     dy += e.dy
+                    if e.dx != 0 or e.dy != 0:
+                        rel_count += 1
                 elif e.event_type == "WHEEL":
                     scroll += e.delta
+
+            # Debug: show if we found REL events but got 0 movement
+            if rel_count > 0 and dx == 0 and dy == 0 and i == 0:
+                print(
+                    f"WARNING: Found {rel_count} REL events in chunk {i} but total movement is 0"
+                )
 
             # Binary search for key events - find last key before c_end
             key_idx = bisect.bisect_right(self.key_timestamps, c_end - 1)
@@ -434,12 +475,18 @@ def main():
         dataset = LumineDataset(str(output_dir))
 
         valid_count = 0
+        skipped_paused = 0
         for i, frame in enumerate(tqdm(frames, desc="Processing frames")):
             # Frame absolute time = video absolute start + frame offset
             frame_time = video_abs_start + (i * frame_interval_100ns)
 
             # Skip frames outside overlap range
             if frame_time < overlap_start or frame_time >= overlap_end:
+                continue
+
+            # Skip frames that fall within paused time ranges
+            if parser_obj.is_paused(frame_time):
+                skipped_paused += 1
                 continue
 
             action_frame = parser_obj.get_actions_at_time(frame_time, duration_ms=200)
@@ -450,7 +497,9 @@ def main():
             )
             valid_count += 1
 
-        print(f"Valid frames: {valid_count}/{len(frames)}")
+        print(
+            f"Valid frames: {valid_count}/{len(frames)} (skipped {skipped_paused} paused frames)"
+        )
 
         dataset.save()
         print(f"Done: {log_f.stem}")
