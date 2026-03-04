@@ -1,4 +1,4 @@
-# /usr/bin/bash
+#!/usr/bin/bash
 
 git submodule update --init --recursive
 sudo apt update

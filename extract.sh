@@ -1,1 +1,2 @@
+#!/usr/bin/bash
 gzip -dc data.tar.gz | pv -s $(gzip -l data.tar.gz | awk 'NR==2 {print $2}') | tar -x --no-same-owner

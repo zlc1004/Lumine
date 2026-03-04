@@ -1,4 +1,4 @@
-# /usr/bin/bash
+#!/usr/bin/bash
 
 sudo add-apt-repository ppa:ubuntu-toolchain-r/test
 sudo apt update
