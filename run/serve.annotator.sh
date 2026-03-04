@@ -3,7 +3,6 @@ source .venv/bin/activate
 
 MODEL="Qwen/Qwen3-VL-32B-Instruct"
 PORT=8000
-MAX_MODEL_LEN=4096
 GPU_MEMORY_UTIL=0.90
 DATA_PARALLEL_SIZE=8
 
@@ -23,6 +22,4 @@ echo "Starting vLLM server with internal load balancing..."
     --host 0.0.0.0 \
     --data-parallel-size $DATA_PARALLEL_SIZE \
     --gpu-memory-utilization $GPU_MEMORY_UTIL \
-    --max-model-len $MAX_MODEL_LEN \
-    --max-num-seqs 256 \
     --trust-remote-code

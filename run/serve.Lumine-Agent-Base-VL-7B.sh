@@ -14,5 +14,4 @@ python3 -m vllm.entrypoints.openai.api_server \
     --model ./models/Lumine-Agent-Base-VL-7B \
     --served-model-name lumine-agent-vl-7b \
     --dtype bfloat16 \
-    --max-model-len 8192 \
     --port 8000
