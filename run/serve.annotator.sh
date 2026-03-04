@@ -1,3 +1,4 @@
+#!/usr/bin/bash
 source .venv/bin/activate
 
 MODEL="Qwen/Qwen3-VL-32B-Instruct"

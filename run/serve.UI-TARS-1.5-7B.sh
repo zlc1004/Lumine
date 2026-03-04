@@ -1,3 +1,4 @@
+#!/usr/bin/bash
 # Activate the environment first
 source .venv/bin/activate
 
