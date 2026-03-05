@@ -82,9 +82,17 @@ case $MODE in
     git clone https://github.com/huggingface/text-generation-inference
     cd text-generation-inference
     
-    # Use cargo build directly instead of make
-    echo "--- Building TGI with cargo ---"
-    cargo build --release
+    # Build both launcher and server
+    echo "--- Building TGI launcher and server with cargo ---"
+    cargo build --release --bin text-generation-launcher
+    cargo build --release --bin text-generation-router
+    
+    # Install Python server dependencies
+    echo "--- Installing TGI Python server dependencies ---"
+    cd server
+    $PYTHON_BIN -m pip install -e .
+    cd ..
+    
     cd ..
     ;;
 
