@@ -30,13 +30,13 @@ case $SERVER in
     # - max-num-seqs: 256 (equivalent to max-batch-prefill-tokens / avg_seq_len)
     # - disable-custom-all-reduce: for stability with VLMs
     # - enforce-eager: equivalent to CUDA_GRAPHS=0 for TGI
-    # Run vLLM on port 8001, proxy on 8000 to handle max_tokens adjustment
-    echo "Starting vLLM backend on port 8001..."
+    # Run vLLM on port 9000, proxy on 8000 to handle max_tokens adjustment
+    echo "Starting vLLM backend on port 9000..."
     python3 -m vllm.entrypoints.openai.api_server \
         --model $MODEL_DIR \
         --served-model-name UI-TARS-1.5-7B \
         --dtype bfloat16 \
-        --port 8001 \
+        --port 9000 \
         --host 127.0.0.1 \
         --trust-remote-code \
         --max-model-len 65536 \
@@ -50,7 +50,7 @@ case $SERVER in
     # Wait for vLLM to start
     echo "Waiting for vLLM backend to be ready..."
     for i in {1..60}; do
-        if curl -s http://127.0.0.1:8001/health > /dev/null 2>&1; then
+        if curl -s http://127.0.0.1:9000/health > /dev/null 2>&1; then
             echo "vLLM backend is ready!"
             break
         fi
@@ -59,7 +59,7 @@ case $SERVER in
     
     # Start proxy
     echo "Starting proxy server on port 8000..."
-    python3 ./vllm_proxy.py --port 8000 --backend-port 8001 --max-context 65536
+    python3 ./vllm_proxy.py --port 8000 --backend-port 9000 --max-context 65536
     ;;
 
   sglang)
