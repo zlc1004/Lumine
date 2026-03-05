@@ -51,7 +51,7 @@ case $SERVER in
     echo "Launching TGI launcher on port 8000..."
     # TGI requires CUDA_GRAPHS=0 to prevent VRAM spikes with vision patches
     export CUDA_GRAPHS=0
-    text-generation-launcher \
+    ./text-generation-inference/target/release/text-generation-launcher \
         --model-id $MODEL_DIR \
         --port 8000 \
         --dtype bfloat16 \

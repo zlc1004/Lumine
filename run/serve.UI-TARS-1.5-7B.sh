@@ -50,7 +50,7 @@ case $SERVER in
     # Note: TGI requires CUDA_GRAPHS=0 for many VLMs to avoid illegal instruction errors
     # Also uses 'port' instead of 'port' mapping in the launcher
     export CUDA_GRAPHS=0
-    text-generation-launcher \
+    ./text-generation-inference/target/release/text-generation-launcher \
         --model-id $MODEL_DIR \
         --port 8000 \
         --dtype bfloat16 \

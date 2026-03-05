@@ -53,6 +53,13 @@ case $MODE in
     # Ensure system-level Rust/Cargo are removed to avoid Edition conflicts
     sudo apt remove -y rustc cargo
     
+    # Add deadsnakes PPA and install Python 3.11 dev library
+    echo "--- Installing Python 3.11 Development Library ---"
+    sudo add-apt-repository ppa:deadsnakes/ppa -y
+    sudo apt update
+    sudo apt install python3.11-dev -y
+    sudo ldconfig
+    
     # Protoc setup
     PROTOC_ZIP=protoc-21.12-linux-x86_64.zip
     curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v21.12/$PROTOC_ZIP
@@ -68,16 +75,16 @@ case $MODE in
     fi
     source $HOME/.cargo/env
 
-    # Pre-install Flash-Attn requirements to avoid Makefile escapes
+    # Pre-install Flash-Attn requirements
     uv pip install torch==2.4.0 packaging wheel
     uv pip install flash-attn==2.6.1 --no-build-isolation
 
     git clone https://github.com/huggingface/text-generation-inference
     cd text-generation-inference
     
-    # Force Makefile to use our specific venv Python for the server components
-    # Use 'cargo build' logic if 'make install' fails to handle the Edition 2024
-    PYTHON=$PYTHON_BIN BUILD_EXTENSIONS=True make install || (cargo build --release)
+    # Use cargo build directly instead of make
+    echo "--- Building TGI with cargo ---"
+    cargo build --release
     cd ..
     ;;
 
