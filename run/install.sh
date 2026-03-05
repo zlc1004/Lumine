@@ -9,10 +9,19 @@ fi
 MODE=$1
 PYTHON_BIN="$PWD/.venv/bin/python"
 
+# Check if sudo is available (RunPod uses single root user without sudo)
+if command -v sudo &> /dev/null; then
+    SUDO="sudo"
+    echo "--- sudo detected, will use for system commands ---"
+else
+    SUDO=""
+    echo "--- No sudo available (running as root), proceeding without sudo ---"
+fi
+
 # 1. Common System Dependencies
 echo "--- Installing Common System Dependencies ---"
-sudo apt update
-sudo apt install -y ffmpeg rsync pv lftp pigz build-essential iputils-ping \
+$SUDO apt update
+$SUDO apt install -y ffmpeg rsync pv lftp pigz build-essential iputils-ping \
                     python3.10-venv libssl-dev gcc g++ make unzip
 
 # 2. Install uv and HF CLI
@@ -49,51 +58,20 @@ case $MODE in
     ;;
 
   tgi)
-    echo "--- Installing TGI (Modern Source) ---"
-    # Ensure system-level Rust/Cargo are removed to avoid Edition conflicts
-    sudo apt remove -y rustc cargo
-    
-    # Add deadsnakes PPA and install Python 3.11 dev library
-    echo "--- Installing Python 3.11 Development Library ---"
-    sudo add-apt-repository ppa:deadsnakes/ppa -y
-    sudo apt update
-    sudo apt install python3.11-dev -y
-    sudo ldconfig
-    
-    # Protoc setup
-    PROTOC_ZIP=protoc-21.12-linux-x86_64.zip
-    curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v21.12/$PROTOC_ZIP
-    sudo unzip -o $PROTOC_ZIP -d /usr/local bin/protoc
-    sudo unzip -o $PROTOC_ZIP -d /usr/local 'include/*'
-    rm -f $PROTOC_ZIP
-
-    # Ensure Modern Rust is installed and SOURCED
-    if ! command -v cargo &> /dev/null; then
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    else
-        rustup update stable
+    echo "--- Installing TGI (Docker) ---"
+    # Check if Docker is installed
+    if ! command -v docker &> /dev/null; then
+        echo "Docker not found. Installing Docker..."
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sh get-docker.sh
+        rm get-docker.sh
     fi
-    source $HOME/.cargo/env
-
-    # Pre-install Flash-Attn requirements
-    uv pip install torch==2.4.0 packaging wheel
-    uv pip install flash-attn==2.6.1 --no-build-isolation
-
-    git clone https://github.com/huggingface/text-generation-inference
-    cd text-generation-inference
     
-    # Build both launcher and server
-    echo "--- Building TGI launcher and server with cargo ---"
-    cargo build --release --bin text-generation-launcher
-    cargo build --release --bin text-generation-router
+    # Pull the TGI Docker image (v3.2.1)
+    echo "--- Pulling TGI Docker image (v3.2.1) ---"
+    docker pull ghcr.io/huggingface/text-generation-inference:3.2.1
     
-    # Install Python server dependencies
-    echo "--- Installing TGI Python server dependencies ---"
-    cd server
-    $PYTHON_BIN -m pip install -e .
-    cd ..
-    
-    cd ..
+    echo "--- TGI Docker image ready ---"
     ;;
 
   *)

@@ -48,14 +48,22 @@ case $SERVER in
     ;;
 
   tgi)
-    echo "Launching TGI launcher on port 8000..."
+    echo "Launching TGI server via Docker on port 8000..."
+    # Get the absolute path to the model directory
+    MODEL_ABSOLUTE_PATH=$(realpath $MODEL_DIR)
+    
     # TGI requires CUDA_GRAPHS=0 to prevent VRAM spikes with vision patches
-    export CUDA_GRAPHS=0
-    ./text-generation-inference/target/release/text-generation-launcher \
-        --model-id $MODEL_DIR \
-        --port 8000 \
+    # PAYLOAD_LIMIT=8000000 prevents request failures due to large images
+    docker run --gpus all --shm-size 1g \
+        -e CUDA_GRAPHS=0 \
+        -e PAYLOAD_LIMIT=8000000 \
+        -p 8000:80 \
+        -v $MODEL_ABSOLUTE_PATH:/data \
+        ghcr.io/huggingface/text-generation-inference:3.2.1 \
+        --model-id /data \
         --dtype bfloat16 \
         --max-input-length 65536 \
+        --max-batch-prefill-tokens 65536 \
         --max-total-tokens 65537
     ;;
 
