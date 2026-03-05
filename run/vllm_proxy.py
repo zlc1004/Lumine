@@ -101,7 +101,8 @@ class VLLMProxy:
 async def create_app(proxy):
     await proxy.init_session()
 
-    app = web.Application()
+    # Set max client request size to 10MB (matching TGI's PAYLOAD_LIMIT=8000000)
+    app = web.Application(client_max_size=10 * 1024 * 1024)
     app["proxy"] = proxy
 
     # Special handling for chat completions
