@@ -7,6 +7,7 @@ if [ -z "$1" ]; then
 fi
 
 MODE=$1
+PYTHON_BIN="$PWD/.venv/bin/python"
 
 # 1. Common System Dependencies
 echo "--- Installing Common System Dependencies ---"
@@ -27,22 +28,15 @@ source .venv/bin/activate
 
 case $MODE in
   vllm)
-echo "--- Installing vLLM (Exact Sequence) ---"
-    # STEP 1: Core stack with cu124 index
+    echo "--- Installing vLLM (Exact Sequence) ---"
     uv pip install vllm transformers accelerate \
         --extra-index-url https://download.pytorch.org/whl/cu124 \
         --index-strategy unsafe-best-match --upgrade
-    
-    # STEP 2: Flash Attention build (must be non-isolated to see STEP 1's torch)
     uv pip install vllm-flash-attn --no-build-isolation
-    
-    # STEP 3: Final package alignment
     uv pip install --upgrade vllm torch transformers accelerate \
         --extra-index-url https://download.pytorch.org/whl/cu124 \
         --index-strategy unsafe-best-match
-    
-    # Verification
-    python3 -c "import torch; import vllm; print(f'Environment Restored: Torch {torch.__version__}')"
+    $PYTHON_BIN -c "import torch; import vllm; print(f'vLLM Ready: Torch {torch.__version__}')"
     ;;
 
   sglang)
@@ -50,28 +44,40 @@ echo "--- Installing vLLM (Exact Sequence) ---"
     git clone https://github.com/zlc1004/sglang
     cd sglang
     uv pip install --upgrade pip
-    uv pip install -e "python"
+    $PYTHON_BIN -m pip install -e "python"
     cd ..
     ;;
 
   tgi)
-    echo "--- Installing TGI (Source) ---"
-    # TGI Specific: Protoc installation
+    echo "--- Installing TGI (Modern Source) ---"
+    # Ensure system-level Rust/Cargo are removed to avoid Edition conflicts
+    sudo apt remove -y rustc cargo
+    
+    # Protoc setup
     PROTOC_ZIP=protoc-21.12-linux-x86_64.zip
     curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v21.12/$PROTOC_ZIP
     sudo unzip -o $PROTOC_ZIP -d /usr/local bin/protoc
     sudo unzip -o $PROTOC_ZIP -d /usr/local 'include/*'
     rm -f $PROTOC_ZIP
 
-    # TGI Specific: Rust installation (required for build)
+    # Ensure Modern Rust is installed and SOURCED
     if ! command -v cargo &> /dev/null; then
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source $HOME/.cargo/env
+    else
+        rustup update stable
     fi
+    source $HOME/.cargo/env
+
+    # Pre-install Flash-Attn requirements to avoid Makefile escapes
+    uv pip install torch==2.4.0 packaging wheel
+    uv pip install flash-attn==2.6.1 --no-build-isolation
 
     git clone https://github.com/huggingface/text-generation-inference
     cd text-generation-inference
-    BUILD_EXTENSIONS=True make install
+    
+    # Force Makefile to use our specific venv Python for the server components
+    # Use 'cargo build' logic if 'make install' fails to handle the Edition 2024
+    PYTHON=$PYTHON_BIN BUILD_EXTENSIONS=True make install || (cargo build --release)
     cd ..
     ;;
 
