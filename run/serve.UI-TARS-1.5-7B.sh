@@ -25,12 +25,22 @@ fi
 case $SERVER in
   vllm)
     echo "Launching vLLM server on port 8000..."
+    # vLLM configuration matching TGI settings:
+    # - max-model-len: 65536 (equivalent to max-input-length)
+    # - max-num-seqs: 256 (equivalent to max-batch-prefill-tokens / avg_seq_len)
+    # - disable-custom-all-reduce: for stability with VLMs
+    # - enforce-eager: equivalent to CUDA_GRAPHS=0 for TGI
     python3 -m vllm.entrypoints.openai.api_server \
         --model $MODEL_DIR \
         --served-model-name UI-TARS-1.5-7B \
         --dtype bfloat16 \
         --port 8000 \
-        --trust-remote-code
+        --host 0.0.0.0 \
+        --trust-remote-code \
+        --max-model-len 65536 \
+        --max-num-seqs 256 \
+        --disable-custom-all-reduce \
+        --enforce-eager
     ;;
 
   sglang)

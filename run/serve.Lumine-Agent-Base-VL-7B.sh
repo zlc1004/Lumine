@@ -26,13 +26,20 @@ fi
 case $SERVER in
   vllm)
     echo "Launching vLLM server on port 8000..."
+    # vLLM configuration with VLM optimizations:
+    # - max-model-len: 16384 (suitable for Lumine Agent Base)
+    # - disable-custom-all-reduce: for stability with VLMs
+    # - enforce-eager: equivalent to CUDA_GRAPHS=0
     python3 -m vllm.entrypoints.openai.api_server \
         --model $MODEL_DIR \
         --served-model-name lumine-agent-vl-7b \
         --dtype bfloat16 \
         --port 8000 \
+        --host 0.0.0.0 \
         --trust-remote-code \
-        --max-model-len 16384
+        --max-model-len 16384 \
+        --disable-custom-all-reduce \
+        --enforce-eager
     ;;
 
   sglang)
