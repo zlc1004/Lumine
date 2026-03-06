@@ -26,9 +26,9 @@ fi
 case $SERVER in
   vllm)
     echo "Launching vLLM server with proxy on port 8000..."
-    # vLLM configuration for InternVL3-14B:
-    # - max-model-len: 32768 (InternVL3 recommended context length)
-    # - max-num-seqs: 256 (higher for 14B model - more efficient than 38B)
+    # vLLM configuration for InternVL3-14B (based on Qwen2.5-14B):
+    # - max-model-len: 131072 (Qwen2.5 supports up to 128k tokens)
+    # - max-num-seqs: 128 (reduced for larger context window)
     # - gpu-memory-utilization: 0.90 (maximize GPU usage)
     # - tensor-parallel-size: 1 (14B fits comfortably on single A40)
     # - disable-custom-all-reduce: for stability with VLMs
@@ -53,8 +53,8 @@ case $SERVER in
         --port 9000 \
         --host 127.0.0.1 \
         --trust-remote-code \
-        --max-model-len 32768 \
-        --max-num-seqs 256 \
+        --max-model-len 131072 \
+        --max-num-seqs 128 \
         --gpu-memory-utilization 0.90 \
         --tensor-parallel-size $TP_SIZE \
         --disable-custom-all-reduce \
@@ -75,19 +75,19 @@ case $SERVER in
     
     # Start proxy
     echo "Starting proxy server on port 8000..."
-    python3 ./vllm_proxy.py --port 8000 --backend-port 9000 --max-context 32768
+    python3 ./vllm_proxy.py --port 8000 --backend-port 9000 --max-context 131072
     ;;
 
   sglang)
     echo "Launching SGLang server on port 8000..."
-    # SGLang configuration for InternVL3-14B
+    # SGLang configuration for InternVL3-14B (Qwen2.5 128k context)
     python3 -m sglang.launch_server \
         --model-path $MODEL_DIR \
         --port 8000 \
         --host 0.0.0.0 \
         --dtype bfloat16 \
         --trust-remote-code \
-        --context-length 32768 \
+        --context-length 131072 \
         --tensor-parallel-size 1
     ;;
 
@@ -106,9 +106,9 @@ case $SERVER in
         ghcr.io/huggingface/text-generation-inference:3.2.1 \
         --model-id /data \
         --dtype bfloat16 \
-        --max-input-length 32768 \
-        --max-batch-prefill-tokens 32768 \
-        --max-total-tokens 32769 \
+        --max-input-length 131072 \
+        --max-batch-prefill-tokens 131072 \
+        --max-total-tokens 131073 \
         --num-shard 1
     ;;
 
