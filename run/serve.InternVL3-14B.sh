@@ -46,7 +46,9 @@ case $SERVER in
     fi
     
     echo "Starting vLLM backend on port 9000..."
-    python3 -m vllm.entrypoints.openai.api_server \
+    # Allow using context length beyond model's max_position_embeddings
+    # InternVL3-14B's Qwen2.5 base supports 128k RoPE scaling
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 python3 -m vllm.entrypoints.openai.api_server \
         --model $MODEL_DIR \
         --served-model-name $MODEL_NAME \
         --dtype bfloat16 \
