@@ -63,15 +63,43 @@ class VLLMProxy:
 
         return payload, None
 
+    async def count_tokens(self, messages):
+        """Use vLLM's tokenize endpoint to get accurate token count"""
+        try:
+            # vLLM tokenize endpoint expects prompt as string or messages
+            async with self.session.post(
+                f"{self.backend_url}/tokenize",
+                json={"messages": messages},
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # vLLM returns {"tokens": [...], "count": N}
+                    token_count = data.get("count", len(data.get("tokens", [])))
+                    print(f"[PROXY] Accurate token count: {token_count}")
+                    return token_count
+                else:
+                    # Fallback to rough estimation if tokenize fails
+                    messages_text = json.dumps(messages)
+                    estimated = len(messages_text) // 4
+                    print(f"[PROXY] Tokenize failed, using estimate: {estimated}")
+                    return estimated
+        except Exception as e:
+            # Fallback to rough estimation on error
+            messages_text = json.dumps(messages)
+            estimated = len(messages_text) // 4
+            print(f"[PROXY] Tokenize error ({e}), using estimate: {estimated}")
+            return estimated
+
     async def handle_chat_completion(self, request):
         """Proxy /v1/chat/completions with automatic max_tokens adjustment"""
         try:
             # Parse request body
             body = await request.json()
 
-            # Estimate input token count (rough approximation: 1 token ~= 4 chars)
-            messages_text = json.dumps(body.get("messages", []))
-            estimated_tokens = len(messages_text) // 4
+            # Get accurate token count from vLLM's tokenizer
+            messages = body.get("messages", [])
+            estimated_tokens = await self.count_tokens(messages)
 
             # Adjust max_tokens if needed
             body, error_msg = self.adjust_max_tokens(body, estimated_tokens)
