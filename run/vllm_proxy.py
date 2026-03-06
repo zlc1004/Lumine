@@ -27,13 +27,33 @@ class VLLMProxy:
         """
         Adjust max_tokens to fit within context window.
         Leaves a safety margin for the input prompt.
+        Returns (adjusted_payload, error_message) tuple.
         """
         if "max_tokens" in payload:
             requested_max_tokens = payload["max_tokens"]
-            # Reserve at least 1024 tokens for input, adjust if needed
-            available_for_output = self.max_context_len - max(
-                estimated_input_tokens, 1024
-            )
+            # Calculate available tokens for output
+            available_for_output = self.max_context_len - estimated_input_tokens
+
+            # Check if input is already too large
+            if available_for_output <= 0:
+                error_msg = (
+                    f"Input is too large: estimated {estimated_input_tokens} tokens, "
+                    f"but max context is {self.max_context_len} tokens. "
+                    f"Please reduce input size or use a model with larger context window."
+                )
+                print(f"[PROXY ERROR] {error_msg}")
+                return None, error_msg
+
+            # Ensure we have at least some tokens for output (minimum 256)
+            if available_for_output < 256:
+                error_msg = (
+                    f"Input is too large: estimated {estimated_input_tokens} tokens, "
+                    f"only {available_for_output} tokens available for output. "
+                    f"Context limit is {self.max_context_len} tokens. "
+                    f"Please reduce input size."
+                )
+                print(f"[PROXY ERROR] {error_msg}")
+                return None, error_msg
 
             if requested_max_tokens > available_for_output:
                 print(
@@ -41,7 +61,7 @@ class VLLMProxy:
                 )
                 payload["max_tokens"] = available_for_output
 
-        return payload
+        return payload, None
 
     async def handle_chat_completion(self, request):
         """Proxy /v1/chat/completions with automatic max_tokens adjustment"""
@@ -54,7 +74,20 @@ class VLLMProxy:
             estimated_tokens = len(messages_text) // 4
 
             # Adjust max_tokens if needed
-            body = self.adjust_max_tokens(body, estimated_tokens)
+            body, error_msg = self.adjust_max_tokens(body, estimated_tokens)
+
+            # If input is too large, return error
+            if error_msg:
+                return web.json_response(
+                    {
+                        "error": {
+                            "message": error_msg,
+                            "type": "invalid_request_error",
+                            "code": "context_length_exceeded",
+                        }
+                    },
+                    status=400,
+                )
 
             # Remove unsupported fields that cause warnings
             body.pop("thinking", None)
