@@ -19,7 +19,7 @@ else
     echo "Downloading UI-TARS-1.5-7B"
     # Ensure hf-transfer is installed for faster downloads on EC2
     export HF_HUB_ENABLE_HF_TRANSFER=1
-    /root/.local/bin/hf download ByteDance-Seed/UI-TARS-1.5-7B --local-dir $MODEL_DIR
+    ~/.local/bin/hf download ByteDance-Seed/UI-TARS-1.5-7B --local-dir $MODEL_DIR
 fi
 
 case $SERVER in

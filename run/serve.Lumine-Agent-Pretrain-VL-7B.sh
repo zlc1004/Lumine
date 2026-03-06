@@ -6,7 +6,7 @@ if [ -d "./models/Lumine-Agent-Pretrain-VL-7B" ]; then
     echo "Lumine-Agent-Pretrain-VL-7B already downloaded"
 else
     echo "Downloading Lumine-Agent-Pretrain-VL-7B"
-    /root/.local/bin/hf download koboshchan/Lumine-Agent-Pretrain-VL-7B --local-dir ./models/Lumine-Agent-Pretrain-VL-7B
+    ~/.local/bin/hf download koboshchan/Lumine-Agent-Pretrain-VL-7B --local-dir ./models/Lumine-Agent-Pretrain-VL-7B
 fi
 
 # Launch the vLLM server

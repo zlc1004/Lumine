@@ -20,7 +20,7 @@ if [ -d "$MODEL_DIR" ]; then
 else
     echo "Downloading $MODEL_NAME..."
     export HF_HUB_ENABLE_HF_TRANSFER=1
-    /root/.local/bin/hf download $REPO_ID --local-dir $MODEL_DIR
+    ~/.local/bin/hf download $REPO_ID --local-dir $MODEL_DIR
 fi
 
 case $SERVER in
