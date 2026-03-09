@@ -24,44 +24,106 @@ fi
 
 case $SERVER in
   vllm)
-    echo "Launching vLLM server with proxy on port 8000..."
-    # vLLM configuration for UI-TARS-1.5-7B (based on Qwen2.5-VL-7B):
-    # - max-model-len: 131072 (Qwen2.5 supports up to 128k tokens)
-    # - max-num-seqs: 128 (reduced for larger context window)
-    # - disable-custom-all-reduce: for stability with VLMs
-    # - enforce-eager: equivalent to CUDA_GRAPHS=0 for TGI
-    # Run vLLM on port 9000, proxy on 8000 to handle max_tokens adjustment
-    echo "Starting vLLM backend on port 9000..."
-    # Allow using context length beyond model's max_position_embeddings
-    # UI-TARS-1.5-7B's Qwen2.5-VL base supports 128k RoPE scaling
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 python3 -m vllm.entrypoints.openai.api_server \
+    # Detect number of GPUs
+    GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+    echo "Detected $GPU_COUNT GPUs"
+    
+    # Configure parallelism based on GPU count
+    if [ "$GPU_COUNT" -eq 1 ]; then
+        # Single GPU: use full 128k context with proxy
+        echo "Single GPU configuration: 128k context with proxy"
+        PORT=9000
+        PROXY_PORT=8000
+        MAX_MODEL_LEN=131072
+        TENSOR_PARALLEL_SIZE=1
+        DATA_PARALLEL_SIZE=1
+        USE_PROXY=true
+    elif [ "$GPU_COUNT" -ge 4 ]; then
+        # Multi-GPU: TP=2, DP=GPU_COUNT/2, default context, no proxy
+        echo "Multi-GPU configuration: TP=2, DP=$((GPU_COUNT/2)), default context, direct port 8000"
+        PORT=8000
+        TENSOR_PARALLEL_SIZE=2
+        DATA_PARALLEL_SIZE=$((GPU_COUNT/2))
+        USE_PROXY=false
+    else
+        echo "WARNING: $GPU_COUNT GPUs detected. Recommended: 1, 4, or 8 GPUs."
+        echo "Using single GPU config anyway."
+        PORT=9000
+        PROXY_PORT=8000
+        MAX_MODEL_LEN=131072
+        TENSOR_PARALLEL_SIZE=1
+        DATA_PARALLEL_SIZE=1
+        USE_PROXY=true
+    fi
+    
+    GPU_MEMORY_UTIL=0.90
+    
+    echo "Starting vLLM server..."
+    echo "Port: $PORT"
+    echo "Tensor Parallel Size: $TENSOR_PARALLEL_SIZE"
+    echo "Data Parallel Size: $DATA_PARALLEL_SIZE"
+    if [ "$USE_PROXY" = true ]; then
+        echo "Max model length: $MAX_MODEL_LEN tokens"
+        echo "Proxy enabled on port: $PROXY_PORT"
+    else
+        echo "Max model length: auto (default from model config)"
+    fi
+    echo "GPU memory utilization: ${GPU_MEMORY_UTIL}"
+    echo ""
+    
+    # Build vLLM command
+    VLLM_CMD="python3 -m vllm.entrypoints.openai.api_server \
         --model $MODEL_DIR \
         --served-model-name UI-TARS-1.5-7B \
         --dtype bfloat16 \
-        --port 9000 \
-        --host 127.0.0.1 \
+        --port $PORT \
         --trust-remote-code \
-        --max-model-len 131072 \
-        --max-num-seqs 128 \
+        --gpu-memory-utilization $GPU_MEMORY_UTIL \
+        --tensor-parallel-size $TENSOR_PARALLEL_SIZE \
         --disable-custom-all-reduce \
-        --enforce-eager &
+        --enforce-eager"
     
-    VLLM_PID=$!
-    echo "vLLM backend started (PID: $VLLM_PID)"
+    # Add host configuration
+    if [ "$USE_PROXY" = true ]; then
+        VLLM_CMD="$VLLM_CMD --host 127.0.0.1"
+    else
+        VLLM_CMD="$VLLM_CMD --host 0.0.0.0"
+    fi
     
-    # Wait for vLLM to start
-    echo "Waiting for vLLM backend to be ready..."
-    for i in {1..60}; do
-        if curl -s http://127.0.0.1:9000/health > /dev/null 2>&1; then
-            echo "vLLM backend is ready!"
-            break
-        fi
-        sleep 2
-    done
+    # Add max-model-len for single GPU (128k context)
+    if [ "$USE_PROXY" = true ]; then
+        VLLM_CMD="VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 $VLLM_CMD --max-model-len $MAX_MODEL_LEN"
+    fi
     
-    # Start proxy
-    echo "Starting proxy server on port 8000..."
-    python3 ./vllm_proxy.py --port 8000 --backend-port 9000 --max-context 131072
+    # Add data parallelism for multi-GPU
+    if [ "$DATA_PARALLEL_SIZE" -gt 1 ]; then
+        VLLM_CMD="$VLLM_CMD --data-parallel-size $DATA_PARALLEL_SIZE"
+    fi
+    
+    # Start vLLM
+    if [ "$USE_PROXY" = true ]; then
+        # Background process with proxy
+        eval "$VLLM_CMD &"
+        VLLM_PID=$!
+        echo "vLLM backend started (PID: $VLLM_PID)"
+        
+        # Wait for vLLM to start
+        echo "Waiting for vLLM backend to be ready..."
+        for i in {1..60}; do
+            if curl -s http://127.0.0.1:$PORT/health > /dev/null 2>&1; then
+                echo "vLLM backend is ready!"
+                break
+            fi
+            sleep 2
+        done
+        
+        # Start proxy
+        echo "Starting proxy server on port $PROXY_PORT..."
+        python3 ./vllm_proxy.py --port $PROXY_PORT --backend-port $PORT --max-context $MAX_MODEL_LEN
+    else
+        # Direct execution without proxy
+        eval "$VLLM_CMD"
+    fi
     ;;
 
   sglang)
