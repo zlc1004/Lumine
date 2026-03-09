@@ -26,60 +26,34 @@ fi
 
 case $SERVER in
   vllm)
-    echo "Launching vLLM server with proxy on port 8000..."
-    # vLLM configuration for UI-TARS-72B-DPO (based on Qwen2-VL-72B):
-    # - max-model-len: 32768 (Qwen2-VL supports up to 32k tokens)
-    # - max-num-seqs: 128 (good for 72B model with data parallelism)
-    # - gpu-memory-utilization: 0.90 (maximize GPU usage for large model)
-    # - tensor-parallel-size: 2 (2 GPUs per replica)
-    # - pipeline-parallel-size: 4 (4 data parallel replicas, total 8 GPUs)
-    # - disable-custom-all-reduce: for stability with VLMs
-    # - enforce-eager: equivalent to CUDA_GRAPHS=0 for VLMs
-    # Run vLLM on port 9000, proxy on 8000 to handle max_tokens adjustment
+    PORT=8000
+    GPU_MEMORY_UTIL=0.90
+    TENSOR_PARALLEL_SIZE=2
+    DATA_PARALLEL_SIZE=4
+    MAX_MODEL_LEN=32768
     
-    # Detect number of GPUs
-    GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-    echo "Detected $GPU_COUNT GPUs"
+    echo "Starting vLLM with Tensor + Data Parallelism..."
+    echo "Model: $REPO_ID"
+    echo "Tensor Parallel Size: $TENSOR_PARALLEL_SIZE"
+    echo "Data Parallel Size: $DATA_PARALLEL_SIZE (Total: 8 GPUs)"
+    echo "Port: $PORT"
+    echo "Max model length: $MAX_MODEL_LEN tokens"
+    echo "GPU memory utilization: ${GPU_MEMORY_UTIL}"
+    echo ""
     
-    if [ "$GPU_COUNT" -lt 8 ]; then
-        echo "WARNING: UI-TARS-72B-DPO requires 8 GPUs, but only $GPU_COUNT detected."
-        echo "Proceeding anyway, but expect potential memory issues."
-    fi
-    
-    echo "Using 4 data parallel replicas with 2-way tensor parallelism (8 GPUs total)"
-    
-    echo "Starting vLLM backend on port 9000..."
     python3 -m vllm.entrypoints.openai.api_server \
         --model $MODEL_DIR \
         --served-model-name $MODEL_NAME \
+        --port $PORT \
+        --host 0.0.0.0 \
         --dtype bfloat16 \
-        --port 9000 \
-        --host 127.0.0.1 \
         --trust-remote-code \
-        --max-model-len 32768 \
-        --max-num-seqs 128 \
-        --gpu-memory-utilization 0.90 \
-        --tensor-parallel-size 2 \
-        --pipeline-parallel-size 4 \
+        --max-model-len $MAX_MODEL_LEN \
+        --tensor-parallel-size $TENSOR_PARALLEL_SIZE \
+        --data-parallel-size $DATA_PARALLEL_SIZE \
+        --gpu-memory-utilization $GPU_MEMORY_UTIL \
         --disable-custom-all-reduce \
-        --enforce-eager &
-    
-    VLLM_PID=$!
-    echo "vLLM backend started (PID: $VLLM_PID)"
-    
-    # Wait for vLLM to start
-    echo "Waiting for vLLM backend to be ready..."
-    for i in {1..120}; do
-        if curl -s http://127.0.0.1:9000/health > /dev/null 2>&1; then
-            echo "vLLM backend is ready!"
-            break
-        fi
-        sleep 2
-    done
-    
-    # Start proxy
-    echo "Starting proxy server on port 8000..."
-    python3 ./vllm_proxy.py --port 8000 --backend-port 9000 --max-context 32768
+        --enforce-eager
     ;;
 
   sglang)

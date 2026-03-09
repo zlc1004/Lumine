@@ -5,5 +5,5 @@ source .venv/bin/activate
 python3 -m vllm.entrypoints.openai.api_server \
     --model ./hf_ckpt \
     --served-model-name lumine-agent-lv-7b \
-    --dtype bfloat16 \
+    --dtype bfloat16 \                  
     --port 8000
