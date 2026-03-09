@@ -28,16 +28,14 @@ case $SERVER in
   vllm)
     PORT=8000
     GPU_MEMORY_UTIL=0.90
-    TENSOR_PARALLEL_SIZE=2
-    DATA_PARALLEL_SIZE=4
-    MAX_MODEL_LEN=32768
+    TENSOR_PARALLEL_SIZE=4
+    DATA_PARALLEL_SIZE=2
     
     echo "Starting vLLM with Tensor + Data Parallelism..."
     echo "Model: $REPO_ID"
     echo "Tensor Parallel Size: $TENSOR_PARALLEL_SIZE"
     echo "Data Parallel Size: $DATA_PARALLEL_SIZE (Total: 8 GPUs)"
     echo "Port: $PORT"
-    echo "Max model length: $MAX_MODEL_LEN tokens"
     echo "GPU memory utilization: ${GPU_MEMORY_UTIL}"
     echo ""
     
@@ -48,7 +46,6 @@ case $SERVER in
         --host 0.0.0.0 \
         --dtype bfloat16 \
         --trust-remote-code \
-        --max-model-len $MAX_MODEL_LEN \
         --tensor-parallel-size $TENSOR_PARALLEL_SIZE \
         --data-parallel-size $DATA_PARALLEL_SIZE \
         --gpu-memory-utilization $GPU_MEMORY_UTIL \
@@ -58,15 +55,13 @@ case $SERVER in
 
   sglang)
     echo "Launching SGLang server on port 8000..."
-    # SGLang configuration for UI-TARS-72B-DPO (Qwen2-VL 32k context)
     python3 -m sglang.launch_server \
         --model-path $MODEL_DIR \
         --port 8000 \
         --host 0.0.0.0 \
         --dtype bfloat16 \
-        --context-length 32768 \
-        --tensor-parallel-size 2 \
-        --data-parallel-size 4 \
+        --tensor-parallel-size 4 \
+        --data-parallel-size 2 \
         --chat-template qwen2_vl \
         --trust-remote-code
     ;;
