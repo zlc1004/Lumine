@@ -85,7 +85,7 @@ case $SERVER in
     # SGLang configuration for InternVL3-14B (Qwen2.5 128k context)
     # Run SGLang on port 30000, proxy on 8000
     echo "Starting SGLang backend on port 30000..."
-    python3 -m sglang.launch_server \
+    SGLANG_DISABLE_CUDNN_CHECK=1 SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1 python3 -m sglang.launch_server \
         --model-path $MODEL_DIR \
         --port 30000 \
         --host 127.0.0.1 \
