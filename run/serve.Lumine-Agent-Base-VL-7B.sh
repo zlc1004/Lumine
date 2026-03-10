@@ -43,15 +43,33 @@ case $SERVER in
     ;;
 
   sglang)
-    echo "Launching SGLang server on port 8000..."
-    # Note: Using the Llama 3 Vision template as it's the closest fit for UI-TARS/Lumine
+    echo "Launching SGLang server with proxy..."
+    # Run SGLang on port 30000, proxy on 8000
+    echo "Starting SGLang backend on port 30000..."
     python3 -m sglang.launch_server \
         --model-path $MODEL_DIR \
-        --port 8000 \
-        --host 0.0.0.0 \
+        --port 30000 \
+        --host 127.0.0.1 \
         --dtype bfloat16 \
         --trust-remote-code \
-        --chat-template llama_3_vision
+        --chat-template llama_3_vision &
+    
+    SGLANG_PID=$!
+    echo "SGLang backend started (PID: $SGLANG_PID)"
+    
+    # Wait for SGLang to start
+    echo "Waiting for SGLang backend to be ready..."
+    for i in {1..120}; do
+        if curl -s http://127.0.0.1:30000/health > /dev/null 2>&1; then
+            echo "SGLang backend is ready!"
+            break
+        fi
+        sleep 2
+    done
+    
+    # Start proxy (default 65k context for 7B model)
+    echo "Starting proxy server on port 8000..."
+    python3 ./sglang_proxy.py --port 8000 --backend-port 30000 --max-context 65536
     ;;
 
   tgi)

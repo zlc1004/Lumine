@@ -82,8 +82,8 @@ case $SERVER in
     ;;
 
   sglang)
-    echo "Launching SGLang server on port 8000..."
-    # SGLang configuration for InternVL3-78B
+    echo "Launching SGLang server on port 8000 (no proxy for multi-GPU)..."
+    # SGLang configuration for InternVL3-78B with 8 GPUs
     python3 -m sglang.launch_server \
         --model-path $MODEL_DIR \
         --port 8000 \

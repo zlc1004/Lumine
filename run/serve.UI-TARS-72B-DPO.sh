@@ -54,7 +54,8 @@ case $SERVER in
     ;;
 
   sglang)
-    echo "Launching SGLang server on port 8000..."
+    echo "Launching SGLang server on port 8000 (no proxy for multi-GPU)..."
+    # SGLang with 8 GPUs runs directly on port 8000
     python3 -m sglang.launch_server \
         --model-path $MODEL_DIR \
         --port 8000 \
