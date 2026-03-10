@@ -1,8 +1,16 @@
 #!/usr/bin/bash
 
+if command -v sudo &> /dev/null; then
+    SUDO="sudo"
+    echo "--- sudo detected, will use for system commands ---"
+else
+    SUDO=""
+    echo "--- No sudo available (running as root), proceeding without sudo ---"
+fi
+
 git submodule update --init --recursive
-sudo apt update
-sudo apt install -y ffmpeg rsync pv lftp pigz iputils-ping python3.10-venv
+$SUDO apt update
+$SUDO apt install -y ffmpeg rsync pv lftp pigz iputils-ping python3.10-venv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 curl -LsSf https://hf.co/cli/install.sh | bash
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh
