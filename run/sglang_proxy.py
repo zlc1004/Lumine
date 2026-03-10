@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
 """
-SGLang Proxy Server that automatically adjusts max_tokens to fit within context window.
-Similar to vLLM proxy but adapted for SGLang's API.
+SGLang Proxy Server that uses native SGLang Python API.
+Provides field filtering and max_tokens adjustment for compatibility.
 """
 
 import asyncio
 import json
-from aiohttp import web, ClientSession
+from aiohttp import web
 import argparse
+import sglang as sgl
+from sglang import RuntimeEndpoint
 
 
 class SGLangProxy:
     def __init__(self, backend_url="http://localhost:30000", max_context_len=131072):
         self.backend_url = backend_url
         self.max_context_len = max_context_len
-        self.session = None
+        self.runtime = None
 
-    async def init_session(self):
-        self.session = ClientSession()
-
-    async def close_session(self):
-        if self.session:
-            await self.session.close()
+    async def init_runtime(self):
+        """Initialize SGLang runtime connection"""
+        try:
+            # Connect to SGLang runtime
+            self.runtime = RuntimeEndpoint(self.backend_url)
+            print(f"[PROXY] Connected to SGLang runtime at {self.backend_url}")
+        except Exception as e:
+            print(f"[PROXY ERROR] Failed to connect to SGLang runtime: {e}")
+            raise
 
     def adjust_max_tokens(self, payload, estimated_input_tokens):
         """
@@ -62,43 +67,24 @@ class SGLangProxy:
 
         return payload, None
 
-    async def count_tokens(self, messages):
-        """Use SGLang's tokenize endpoint to get accurate token count"""
-        try:
-            # SGLang tokenize endpoint
-            async with self.session.post(
-                f"{self.backend_url}/tokenize",
-                json={"text": json.dumps(messages)},
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    # SGLang returns {"count": N}
-                    token_count = data.get("count", 0)
-                    print(f"[PROXY] Accurate token count: {token_count}")
-                    return token_count
-                else:
-                    # Fallback to rough estimation
-                    messages_text = json.dumps(messages)
-                    estimated = len(messages_text) // 4
-                    print(f"[PROXY] Tokenize failed, using estimate: {estimated}")
-                    return estimated
-        except Exception as e:
-            # Fallback to rough estimation on error
-            messages_text = json.dumps(messages)
-            estimated = len(messages_text) // 4
-            print(f"[PROXY] Tokenize error ({e}), using estimate: {estimated}")
-            return estimated
+    def count_tokens(self, messages):
+        """Estimate token count from messages"""
+        # Simple estimation: 1 token ~= 4 characters
+        # SGLang doesn't have a direct tokenize method in the Python API
+        messages_text = json.dumps(messages)
+        estimated = len(messages_text) // 4
+        print(f"[PROXY] Estimated token count: {estimated}")
+        return estimated
 
     async def handle_chat_completion(self, request):
-        """Proxy /v1/chat/completions with automatic max_tokens adjustment"""
+        """Proxy /v1/chat/completions using SGLang Python API"""
         try:
             # Parse request body
             body = await request.json()
 
-            # Get accurate token count
+            # Get token count
             messages = body.get("messages", [])
-            estimated_tokens = await self.count_tokens(messages)
+            estimated_tokens = self.count_tokens(messages)
 
             # Adjust max_tokens if needed
             body, error_msg = self.adjust_max_tokens(body, estimated_tokens)
@@ -116,11 +102,7 @@ class SGLangProxy:
                     status=400,
                 )
 
-            # Remove unsupported fields that might cause warnings
-            body.pop("thinking", None)
-
-            # SGLang-specific: Remove fields that might cause 400 errors
-            # Keep only known SGLang parameters
+            # Filter to known SGLang parameters
             allowed_fields = {
                 "messages",
                 "model",
@@ -145,78 +127,127 @@ class SGLangProxy:
             # Filter to only allowed fields
             filtered_body = {k: v for k, v in body.items() if k in allowed_fields}
 
-            # Forward to backend
-            async with self.session.post(
-                f"{self.backend_url}/v1/chat/completions",
-                json=filtered_body,
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                response_data = await resp.read()
+            # Use SGLang Python API to generate
+            try:
+                # Build generation parameters
+                sampling_params = {}
+                if "temperature" in filtered_body:
+                    sampling_params["temperature"] = filtered_body["temperature"]
+                if "top_p" in filtered_body:
+                    sampling_params["top_p"] = filtered_body["top_p"]
+                if "max_tokens" in filtered_body:
+                    sampling_params["max_new_tokens"] = filtered_body["max_tokens"]
+                if "frequency_penalty" in filtered_body:
+                    sampling_params["frequency_penalty"] = filtered_body[
+                        "frequency_penalty"
+                    ]
+                if "presence_penalty" in filtered_body:
+                    sampling_params["presence_penalty"] = filtered_body[
+                        "presence_penalty"
+                    ]
+                if "stop" in filtered_body:
+                    sampling_params["stop"] = filtered_body["stop"]
 
-                # Log error responses for debugging
-                if resp.status != 200:
-                    print(
-                        f"[PROXY ERROR] Backend returned {resp.status}: {response_data.decode()}"
-                    )
+                # Format messages for SGLang
+                # Convert OpenAI format to SGLang format
+                prompt_parts = []
+                for msg in messages:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
 
-                return web.Response(
-                    body=response_data,
-                    status=resp.status,
-                    content_type="application/json",
+                    if isinstance(content, str):
+                        prompt_parts.append(f"{role}: {content}")
+                    elif isinstance(content, list):
+                        # Handle multimodal content (text + images)
+                        for item in content:
+                            if item.get("type") == "text":
+                                prompt_parts.append(f"{role}: {item.get('text', '')}")
+                            elif item.get("type") == "image_url":
+                                # SGLang handles images differently
+                                prompt_parts.append(f"{role}: [image]")
+
+                prompt = "\n".join(prompt_parts)
+
+                # Generate using SGLang runtime
+                response = await asyncio.to_thread(
+                    self.runtime.generate, prompt, sampling_params=sampling_params
+                )
+
+                # Convert SGLang response to OpenAI format
+                openai_response = {
+                    "id": f"chatcmpl-{response.get('meta_info', {}).get('id', 'unknown')}",
+                    "object": "chat.completion",
+                    "created": response.get("meta_info", {}).get("created", 0),
+                    "model": filtered_body.get("model", "unknown"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": response.get("text", ""),
+                            },
+                            "finish_reason": response.get("meta_info", {}).get(
+                                "finish_reason", "stop"
+                            ),
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": response.get("meta_info", {}).get(
+                            "prompt_tokens", 0
+                        ),
+                        "completion_tokens": response.get("meta_info", {}).get(
+                            "completion_tokens", 0
+                        ),
+                        "total_tokens": response.get("meta_info", {}).get(
+                            "total_tokens", 0
+                        ),
+                    },
+                }
+
+                return web.json_response(openai_response)
+
+            except Exception as e:
+                print(f"[PROXY ERROR] SGLang generation failed: {e}")
+                import traceback
+
+                traceback.print_exc()
+                return web.json_response(
+                    {"error": {"message": str(e), "type": "runtime_error"}}, status=500
                 )
 
         except Exception as e:
-            print(f"[ERROR] {e}")
+            print(f"[ERROR] Request handling failed: {e}")
             import traceback
 
             traceback.print_exc()
             return web.json_response({"error": str(e)}, status=500)
 
-    async def proxy_request(self, request):
-        """Generic proxy for other endpoints"""
-        path = request.path
-
-        try:
-            async with self.session.request(
-                method=request.method,
-                url=f"{self.backend_url}{path}",
-                data=await request.read(),
-                headers={
-                    k: v for k, v in request.headers.items() if k.lower() != "host"
-                },
-            ) as resp:
-                response_data = await resp.read()
-                return web.Response(
-                    body=response_data, status=resp.status, headers=resp.headers
-                )
-        except Exception as e:
-            print(f"[ERROR] Proxy failed: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+    async def handle_health(self, request):
+        """Health check endpoint"""
+        return web.json_response({"status": "ok"})
 
 
 async def create_app(proxy):
-    await proxy.init_session()
+    await proxy.init_runtime()
 
     # Set max client request size to 10MB for large images
     app = web.Application(client_max_size=10 * 1024 * 1024)
     app["proxy"] = proxy
 
-    # Special handling for chat completions
+    # Health check
+    app.router.add_get("/health", proxy.handle_health)
+    app.router.add_get("/v1/health", proxy.handle_health)
+
+    # Chat completions endpoint
     app.router.add_post("/v1/chat/completions", proxy.handle_chat_completion)
-
-    # Proxy all other requests
-    app.router.add_route("*", "/{path:.*}", proxy.proxy_request)
-
-    async def cleanup(app):
-        await proxy.close_session()
-
-    app.on_cleanup.append(cleanup)
 
     return app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SGLang Proxy Server")
+    parser = argparse.ArgumentParser(
+        description="SGLang Proxy Server using native Python API"
+    )
     parser.add_argument("--port", type=int, default=8000, help="Proxy server port")
     parser.add_argument(
         "--backend-port", type=int, default=30000, help="SGLang backend port"
@@ -232,6 +263,7 @@ def main():
     print(f"[PROXY] Starting SGLang proxy on port {args.port}")
     print(f"[PROXY] Backend: {backend_url}")
     print(f"[PROXY] Max context length: {args.max_context}")
+    print(f"[PROXY] Using native SGLang Python API")
 
     web.run_app(create_app(proxy), host="0.0.0.0", port=args.port)
 
